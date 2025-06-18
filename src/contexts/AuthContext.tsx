@@ -59,12 +59,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             name: newSession.user.user_metadata?.full_name || newSession.user.email?.split('@')[0] || 'مستخدم',
             avatar: newSession.user.user_metadata?.avatar_url,
           });
-          if (_event === 'SIGNED_IN') {
+          // Only redirect on explicit SIGNED_IN event if not already on dashboard
+          // This prevents redirect loops if user is already on dashboard or other authenticated page
+          if (_event === 'SIGNED_IN' && window.location.pathname === '/') {
             router.push('/dashboard');
           }
         } else {
           setUser(null);
-           if (_event === 'SIGNED_OUT') {
+           if (_event === 'SIGNED_OUT' && window.location.pathname !== '/') { // Avoid pushing to '/' if already there
             router.push('/');
           }
         }
@@ -77,13 +79,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [router]);
 
-  // This login function is kept for compatibility if needed, but direct Supabase calls in LoginForm are preferred.
   const login = (email: string, name: string = 'مستخدم تجريبي', avatar?: string) => {
-    // Actual login is handled by Supabase in LoginForm.
-    // This function might be used to update local profile details if needed post-login,
-    // or could be removed if onAuthStateChange is sufficient.
     console.warn("AuthContext.login called, but Supabase handles actual login. Ensure this is intended.");
-    // For demo purposes, it might set a temporary user or rely on onAuthStateChange
   };
 
   const logout = async () => {
@@ -91,9 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Error logging out:', error);
-      // Handle error appropriately, e.g., show a toast
     }
-    // onAuthStateChange will handle setting user to null and redirecting
     setLoading(false);
   };
 

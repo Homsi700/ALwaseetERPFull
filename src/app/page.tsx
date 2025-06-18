@@ -17,6 +17,8 @@ export default function LoginPage() {
     }
   }, [user, loading, router]);
 
+  // If loading or user is already defined (meaning they are logged in or session is being checked),
+  // show a loading spinner or redirect. This prevents LoginForm from flashing.
   if (loading || user) {
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -25,5 +27,6 @@ export default function LoginPage() {
     );
   }
 
+  // Only render LoginForm if not loading and no user (meaning they are logged out)
   return <LoginForm />;
 }

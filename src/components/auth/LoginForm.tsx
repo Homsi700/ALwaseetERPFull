@@ -16,8 +16,6 @@ export const LoginForm = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // useAuth hook is still useful for accessing logout or user info elsewhere,
-  // but login itself will be a direct Supabase call.
   const { toast } = useToast();
 
   const handleSubmit = async (event: FormEvent) => {
@@ -46,7 +44,7 @@ export const LoginForm = () => {
       } else if (data.user) {
         toast({
           title: "تم تسجيل الدخول بنجاح",
-          description: `مرحباً بعودتك، ${data.user.email}!`, // AuthContext will handle name display
+          description: `مرحباً بعودتك!`, 
         });
         // Redirection is handled by AuthContext's onAuthStateChange
       } else {

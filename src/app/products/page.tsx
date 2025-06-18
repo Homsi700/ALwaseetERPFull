@@ -11,6 +11,8 @@ import ProductFormModal from '@/components/products/ProductFormModal';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
+
 
 // Helper function to map JS object to Supabase snake_case
 const mapToSupabaseProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & { id?: string; created_at?: string }) => {
@@ -60,9 +62,10 @@ const ProductsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
+  const router = useRouter();
 
   const fetchProducts = useCallback(async () => {
-    if (!user) return; // Don't fetch if user is not logged in
+    if (!user) return; 
     setIsLoading(true);
     try {
       const { data, error } = await supabase
@@ -88,10 +91,10 @@ const ProductsPage = () => {
   }, [toast, user]);
 
   useEffect(() => {
-    if(user){ // Fetch products only if user is authenticated
+    if(user){ 
         fetchProducts();
     } else {
-        setProducts([]); // Clear products if user logs out
+        setProducts([]); 
         setIsLoading(false);
     }
   }, [fetchProducts, user]);
@@ -131,14 +134,14 @@ const ProductsPage = () => {
     // Remove id if it's for a new product, Supabase generates it
     const { id, ...dataForSupabase } = productToSaveSupabase;
 
-    if (editingProduct) { // Update existing product
+    if (editingProduct) { 
       try {
         const { data: updatedProduct, error } = await supabase
           .from('products')
           .update(dataForSupabase)
           .eq('id', editingProduct.id)
           .select()
-          .single(); // .single() ensures we get the updated record back
+          .single(); 
 
         if (error) throw error;
 
@@ -160,13 +163,13 @@ const ProductsPage = () => {
           variant: 'destructive',
         });
       }
-    } else { // Add new product
+    } else { 
       try {
         const { data: newProductData, error } = await supabase
           .from('products')
-          .insert([dataForSupabase]) // insert expects an array
+          .insert([dataForSupabase]) 
           .select()
-          .single(); // .single() ensures we get the new record back
+          .single(); 
 
         if (error) throw error;
         
@@ -191,7 +194,7 @@ const ProductsPage = () => {
     setEditingProduct(undefined);
   };
 
-  if (isLoading && !user) { // Show loading spinner only if loading is true and user is not yet determined
+  if (isLoading && !user) { 
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -201,7 +204,7 @@ const ProductsPage = () => {
     );
   }
   
-  if (!user && !isLoading) { // If not loading and no user, show login prompt (or handle via AppLayout)
+  if (!user && !isLoading) { 
      return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center h-64 text-center">

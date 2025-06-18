@@ -19,7 +19,7 @@ import {
   SidebarNavLink,
   SidebarFooter,
   SidebarMobileDrawer,
-  useSidebarAlt, // Import useSidebarAlt
+  useSidebarAlt, 
 } from '@/components/ui/sidebar-alt';
 import {
   LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, UsersRound, SettingsIcon
@@ -53,7 +53,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
+  if (loading || !user) { // Ensures that user data is available before rendering layout
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -62,7 +62,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   }
 
   const MobileNavContent = () => {
-    const { setIsOpen } = useSidebarAlt(); // Get setIsOpen from context
+    const { setIsOpen } = useSidebarAlt(); 
     return (
       <SidebarNavMain>
         {navItems.map((item) => (
@@ -70,7 +70,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
             key={item.href}
             href={item.href}
             active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard' && item.href.length > 1 ? pathname.startsWith(item.href) : pathname === item.href)}
-            onClick={() => setIsOpen(false)} // Close sidebar on link click
+            onClick={() => setIsOpen(false)} 
           >
             <item.icon className="w-5 h-5 ml-3" />
             {item.label}
@@ -100,8 +100,8 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.avatar || `https://placehold.co/40x40.png?text=${user.name.charAt(0)}`} alt={user.name} data-ai-hint="person letter"/>
-                    <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                    <AvatarImage src={user.avatar || `https://placehold.co/40x40.png?text=${encodeURIComponent(user.name?.charAt(0) || 'U')}`} alt={user.name || 'User'} data-ai-hint="person letter"/>
+                    <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -160,5 +160,3 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 };
 
 export default AppLayout;
-
-    
