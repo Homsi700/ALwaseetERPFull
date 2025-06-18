@@ -1,3 +1,4 @@
+
 // src/components/ui/sidebar-alt.tsx
 "use client"
 
@@ -6,6 +7,8 @@ import Link, { LinkProps } from "next/link"
 import { cn } from "@/lib/utils"
 import { Button, ButtonProps } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Building } from "lucide-react";
+
 
 interface SidebarContextProps {
   isOpen: boolean
@@ -24,14 +27,15 @@ export function useSidebarAlt() {
 }
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [isOpen, setIsOpen] = React.useState(true) // Default to open on desktop
+  const [isOpen, setIsOpen] = React.useState(true) 
   const [isMobile, setIsMobile] = React.useState(false)
 
   React.useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768) // Tailwind's md breakpoint
-      if (window.innerWidth < 768) setIsOpen(false); // Close sidebar by default on mobile
-      else setIsOpen(true); // Open sidebar by default on desktop
+      const mobileCheck = window.innerWidth < 768; // Tailwind's md breakpoint
+      setIsMobile(mobileCheck);
+      if (mobileCheck) setIsOpen(false); 
+      else setIsOpen(true); 
     }
     checkMobile()
     window.addEventListener("resize", checkMobile)
@@ -51,13 +55,13 @@ export const Sidebar = React.forwardRef<
 >(({ className, ...props }, ref) => {
   const { isOpen, isMobile } = useSidebarAlt()
 
-  if (isMobile) return null // Handled by SidebarMobileDrawer
+  if (isMobile) return null
 
   return (
     <aside
       ref={ref}
       className={cn(
-        "hidden md:flex flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out",
+        "hidden md:flex flex-col bg-sidebar text-sidebar-foreground border-l border-sidebar-border transition-all duration-300 ease-in-out",
         isOpen ? "w-64" : "w-16",
         className
       )}
@@ -186,7 +190,7 @@ export const SidebarFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("p-4 border-t border-sidebar-border mt-auto", className)}
+    className={cn("p-4 border-b border-sidebar-border mt-auto", className)} // Changed border-t to border-b for RTL consistency if footer is at bottom
     {...props}
   />
 ))
@@ -224,11 +228,11 @@ export function SidebarMobileDrawer({ children, trigger }: { children: React.Rea
       <SheetTrigger asChild className="md:hidden">
         {trigger}
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 bg-sidebar text-sidebar-foreground p-0 border-r border-sidebar-border flex flex-col">
+      <SheetContent side="right" className="w-64 bg-sidebar text-sidebar-foreground p-0 border-l border-sidebar-border flex flex-col">
          <SidebarHeader>
             <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setIsSheetOpen(false)}>
-               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7 text-sidebar-primary"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-              <h1 className="text-xl font-headline font-semibold text-sidebar-primary">Al-Waseet</h1>
+               <Building className="h-7 w-7 text-sidebar-primary" />
+              <h1 className="text-xl font-headline font-semibold text-sidebar-primary">الوسيط</h1>
             </Link>
           </SidebarHeader>
         <SidebarMain>
@@ -237,7 +241,6 @@ export function SidebarMobileDrawer({ children, trigger }: { children: React.Rea
             </SidebarNav>
         </SidebarMain>
         <SidebarFooter>
-            {/* Mobile footer content if any */}
         </SidebarFooter>
       </SheetContent>
     </Sheet>

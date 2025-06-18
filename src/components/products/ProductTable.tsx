@@ -1,3 +1,4 @@
+
 // src/components/products/ProductTable.tsx
 "use client";
 
@@ -33,20 +34,20 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[80px]">Image</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right">Stock</TableHead>
-              <TableHead className="text-center">Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[80px]">الصورة</TableHead>
+              <TableHead>الاسم</TableHead>
+              <TableHead>الفئة</TableHead>
+              <TableHead className="text-left">السعر</TableHead>
+              <TableHead className="text-left">المخزون</TableHead>
+              <TableHead className="text-center">الحالة</TableHead>
+              <TableHead className="text-left">الإجراءات</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {products.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center h-24">
-                  No products found.
+                  لا توجد منتجات.
                 </TableCell>
               </TableRow>
             ) : (
@@ -64,31 +65,31 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
                   </TableCell>
                   <TableCell className="font-medium text-foreground">{product.name}</TableCell>
                   <TableCell className="text-muted-foreground">{product.category}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">${product.price.toFixed(2)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{product.stock}</TableCell>
+                  <TableCell className="text-left text-muted-foreground">{product.price.toFixed(2)} ر.س</TableCell>
+                  <TableCell className="text-left text-muted-foreground">{product.stock}</TableCell>
                   <TableCell className="text-center">
                     {product.stock > 20 ? (
-                      <Badge variant="default" className="bg-green-500/20 text-green-700 hover:bg-green-500/30 border-green-500/30">In Stock</Badge>
+                      <Badge variant="default" className="bg-green-500/20 text-green-700 hover:bg-green-500/30 border-green-500/30">متوفر</Badge>
                     ) : product.stock > 0 ? (
-                      <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-700 hover:bg-yellow-500/30 border-yellow-500/30">Low Stock</Badge>
+                      <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-700 hover:bg-yellow-500/30 border-yellow-500/30">مخزون منخفض</Badge>
                     ) : (
-                      <Badge variant="destructive" className="bg-red-500/20 text-red-700 hover:bg-red-500/30 border-red-500/30">Out of Stock</Badge>
+                      <Badge variant="destructive" className="bg-red-500/20 text-red-700 hover:bg-red-500/30 border-red-500/30">نفذ المخزون</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-left">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-8 w-8 p-0">
-                          <span className="sr-only">Open menu</span>
+                          <span className="sr-only">فتح القائمة</span>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="start">
                         <DropdownMenuItem onClick={() => onEdit(product)}>
-                          <FileEdit className="mr-2 h-4 w-4" /> Edit
+                          <FileEdit className="ml-2 h-4 w-4" /> تعديل
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => onDelete(product.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          <Trash2 className="ml-2 h-4 w-4" /> حذف
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

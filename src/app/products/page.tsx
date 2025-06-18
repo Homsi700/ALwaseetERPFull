@@ -1,3 +1,4 @@
+
 // src/app/products/page.tsx
 "use client";
 
@@ -9,11 +10,11 @@ import ProductTable, { Product } from '@/components/products/ProductTable';
 import ProductFormModal from '@/components/products/ProductFormModal';
 
 const initialProducts: Product[] = [
-  { id: '1', name: 'Organic Apples', category: 'Fruits', price: 2.99, stock: 150, image: 'https://placehold.co/100x100.png' },
-  { id: '2', name: 'Whole Wheat Bread', category: 'Bakery', price: 3.49, stock: 80, image: 'https://placehold.co/100x100.png' },
-  { id: '3', name: 'Free-Range Eggs (Dozen)', category: 'Dairy & Eggs', price: 4.99, stock: 60, image: 'https://placehold.co/100x100.png' },
-  { id: '4', name: 'Almond Milk (1L)', category: 'Beverages', price: 2.79, stock: 120, image: 'https://placehold.co/100x100.png' },
-  { id: '5', name: 'Grass-Fed Ground Beef (1lb)', category: 'Meat', price: 7.99, stock: 45, image: 'https://placehold.co/100x100.png' },
+  { id: '1', name: 'تفاح عضوي', category: 'فواكه', price: 2.99, stock: 150, image: 'https://placehold.co/100x100.png' },
+  { id: '2', name: 'خبز قمح كامل', category: 'مخبوزات', price: 3.49, stock: 80, image: 'https://placehold.co/100x100.png' },
+  { id: '3', name: 'بيض (طبق)', category: 'ألبان وبيض', price: 4.99, stock: 60, image: 'https://placehold.co/100x100.png' },
+  { id: '4', name: 'حليب لوز (١ لتر)', category: 'مشروبات', price: 2.79, stock: 120, image: 'https://placehold.co/100x100.png' },
+  { id: '5', name: 'لحم بقري مفروم (١ كجم)', category: 'لحوم', price: 7.99, stock: 45, image: 'https://placehold.co/100x100.png' },
 ];
 
 const ProductsPage = () => {
@@ -47,9 +48,9 @@ const ProductsPage = () => {
     <AppLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-center">
-          <h1 className="text-3xl font-headline font-semibold text-foreground">Product Management</h1>
+          <h1 className="text-3xl font-headline font-semibold text-foreground">إدارة المنتجات</h1>
           <Button onClick={handleAddProduct} className="mt-4 sm:mt-0 bg-primary hover:bg-primary/90 text-primary-foreground">
-            <PlusCircle className="mr-2 h-5 w-5" /> Add New Product
+            <PlusCircle className="ml-2 h-5 w-5" /> إضافة منتج جديد
           </Button>
         </div>
         

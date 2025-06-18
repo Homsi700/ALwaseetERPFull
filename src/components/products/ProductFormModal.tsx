@@ -1,3 +1,4 @@
+
 // src/components/products/ProductFormModal.tsx
 "use client";
 
@@ -14,11 +15,11 @@ import type { Product } from './ProductTable';
 import { useToast } from '@/hooks/use-toast';
 
 const productSchema = z.object({
-  name: z.string().min(1, "Product name is required"),
-  category: z.string().min(1, "Category is required"),
-  price: z.number().min(0.01, "Price must be positive"),
-  stock: z.number().min(0, "Stock cannot be negative").int("Stock must be an integer"),
-  image: z.string().url("Must be a valid URL").optional().or(z.literal('')),
+  name: z.string().min(1, "اسم المنتج مطلوب"),
+  category: z.string().min(1, "الفئة مطلوبة"),
+  price: z.number().min(0.01, "يجب أن يكون السعر إيجابيًا"),
+  stock: z.number().min(0, "لا يمكن أن يكون المخزون سالبًا").int("يجب أن يكون المخزون عددًا صحيحًا"),
+  image: z.string().url("يجب أن يكون عنوان URL صالحًا").optional().or(z.literal('')),
 });
 
 type ProductFormData = z.infer<typeof productSchema>;
@@ -30,7 +31,7 @@ interface ProductFormModalProps {
   product?: Product;
 }
 
-const categories = ["Fruits", "Vegetables", "Bakery", "Dairy & Eggs", "Meat", "Beverages", "Pantry", "Snacks", "Other"];
+const categories = ["فواكه", "خضروات", "مخبوزات", "ألبان وبيض", "لحوم", "مشروبات", "بقالة", "وجبات خفيفة", "أخرى"];
 
 const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, onSave, product }) => {
   const { toast } = useToast();
@@ -61,12 +62,12 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
 
   const onSubmit = (data: ProductFormData) => {
     onSave({
-      id: product?.id || String(Date.now()), // Keep existing ID or generate new
+      id: product?.id || String(Date.now()), 
       ...data,
     });
     toast({
-      title: `Product ${product ? 'Updated' : 'Added'}`,
-      description: `${data.name} has been successfully ${product ? 'updated' : 'added'}.`,
+      title: `تم ${product ? 'تحديث' : 'إضافة'} المنتج`,
+      description: `تم ${product ? 'تحديث' : 'إضافة'} ${data.name} بنجاح.`,
     });
     onClose();
   };
@@ -75,11 +76,11 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[480px] bg-card">
         <DialogHeader>
-          <DialogTitle className="font-headline text-2xl text-foreground">{product ? 'Edit Product' : 'Add New Product'}</DialogTitle>
+          <DialogTitle className="font-headline text-2xl text-foreground">{product ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 py-4">
           <div>
-            <Label htmlFor="name" className="text-muted-foreground">Product Name</Label>
+            <Label htmlFor="name" className="text-muted-foreground">اسم المنتج</Label>
             <Controller
               name="name"
               control={control}
@@ -89,14 +90,14 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
           </div>
 
           <div>
-            <Label htmlFor="category" className="text-muted-foreground">Category</Label>
+            <Label htmlFor="category" className="text-muted-foreground">الفئة</Label>
             <Controller
               name="category"
               control={control}
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value} dir="rtl">
                   <SelectTrigger id="category" className="mt-1 bg-input/50 focus:bg-input">
-                    <SelectValue placeholder="Select a category" />
+                    <SelectValue placeholder="اختر فئة" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
@@ -109,7 +110,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="price" className="text-muted-foreground">Price</Label>
+              <Label htmlFor="price" className="text-muted-foreground">السعر</Label>
               <Controller
                 name="price"
                 control={control}
@@ -118,7 +119,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
               {errors.price && <p className="text-sm text-destructive mt-1">{errors.price.message}</p>}
             </div>
             <div>
-              <Label htmlFor="stock" className="text-muted-foreground">Stock Quantity</Label>
+              <Label htmlFor="stock" className="text-muted-foreground">كمية المخزون</Label>
               <Controller
                 name="stock"
                 control={control}
@@ -129,7 +130,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
           </div>
 
           <div>
-            <Label htmlFor="image" className="text-muted-foreground">Image URL (Optional)</Label>
+            <Label htmlFor="image" className="text-muted-foreground">رابط الصورة (اختياري)</Label>
             <Controller
                 name="image"
                 control={control}
@@ -139,10 +140,10 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
           </div>
 
           <DialogFooter className="mt-8">
+            <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ المنتج</Button>
             <DialogClose asChild>
-              <Button type="button" variant="outline">Cancel</Button>
+              <Button type="button" variant="outline">إلغاء</Button>
             </DialogClose>
-            <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">Save Product</Button>
           </DialogFooter>
         </form>
       </DialogContent>

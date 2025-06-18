@@ -1,3 +1,4 @@
+
 // src/app/pos/page.tsx
 "use client";
 
@@ -10,23 +11,22 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { QrCode, Search, Plus, Minus, Trash2, Scale, CreditCard } from 'lucide-react';
-import type { Product } from '@/components/products/ProductTable'; // Reusing Product type
+import type { Product } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 
-// Mock product data (ideally fetched from a backend or context)
 const availableProducts: Product[] = [
-  { id: '1', name: 'Organic Apples', category: 'Fruits', price: 2.99, stock: 150, image: 'https://placehold.co/40x40.png' },
-  { id: '2', name: 'Whole Wheat Bread', category: 'Bakery', price: 3.49, stock: 80, image: 'https://placehold.co/40x40.png' },
-  { id: '3', name: 'Free-Range Eggs', category: 'Dairy & Eggs', price: 4.99, stock: 60, image: 'https://placehold.co/40x40.png' },
-  { id: '4', name: 'Banana', category: 'Fruits', price: 0.50, stock: 200, image: 'https://placehold.co/40x40.png' }, // Price per unit
-  { id: '5', name: 'Chicken Breast (per kg)', category: 'Meat', price: 9.99, stock: 50, image: 'https://placehold.co/40x40.png' }, // Price per kg
+  { id: '1', name: 'تفاح عضوي', category: 'فواكه', price: 2.99, stock: 150, image: 'https://placehold.co/40x40.png' },
+  { id: '2', name: 'خبز قمح كامل', category: 'مخبوزات', price: 3.49, stock: 80, image: 'https://placehold.co/40x40.png' },
+  { id: '3', name: 'بيض', category: 'ألبان وبيض', price: 4.99, stock: 60, image: 'https://placehold.co/40x40.png' },
+  { id: '4', name: 'موز', category: 'فواكه', price: 0.50, stock: 200, image: 'https://placehold.co/40x40.png' },
+  { id: '5', name: 'صدر دجاج (للكيلو)', category: 'لحوم', price: 9.99, stock: 50, image: 'https://placehold.co/40x40.png' },
 ];
 
 interface CartItem extends Product {
   quantity: number;
   isWeighed?: boolean;
-  calculatedWeight?: number; // for weighed items based on total price
+  calculatedWeight?: number; 
 }
 
 const PosPage = () => {
@@ -39,7 +39,7 @@ const PosPage = () => {
   const filteredProducts = useMemo(() => 
     availableProducts.filter(p => 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
-      !cart.find(item => item.id === p.id) // Exclude items already in cart from quick add
+      !cart.find(item => item.id === p.id) 
     ),
     [searchTerm, cart]
   );
@@ -48,13 +48,13 @@ const PosPage = () => {
     const existingItem = cart.find(item => item.id === product.id);
     if (existingItem) {
       if(existingItem.isWeighed) {
-        toast({ title: "Info", description: `${product.name} is already in cart as a weighed item. Remove to re-add.`, variant: "default" });
+        toast({ title: "معلومة", description: `${product.name} موجود بالفعل في السلة كمنتج موزون. قم بإزالته لإعادة إضافته.`, variant: "default" });
         return;
       }
       setCart(cart.map(item => item.id === product.id ? { ...item, quantity: Math.min(item.quantity + quantity, product.stock) } : item));
     } else {
-      if (product.stock < quantity && product.category !== 'Meat') { // Assuming Meat is weighable and stock is in kg
-         toast({ title: "Stock Alert", description: `Not enough ${product.name} in stock.`, variant: "destructive" });
+      if (product.stock < quantity && !product.name.toLowerCase().includes('(للكيلو)')) {
+         toast({ title: "تنبيه المخزون", description: `لا يوجد ما يكفي من ${product.name} في المخزون.`, variant: "destructive" });
          return;
       }
       setCart([...cart, { ...product, quantity: Math.min(quantity, product.stock) }]);
@@ -65,7 +65,7 @@ const PosPage = () => {
     const productInCart = cart.find(item => item.id === productId);
     if (productInCart) {
       if (newQuantity > productInCart.stock && !productInCart.isWeighed) {
-        toast({ title: "Stock Alert", description: `Cannot exceed available stock for ${productInCart.name}.`, variant: "destructive" });
+        toast({ title: "تنبيه المخزون", description: `لا يمكن تجاوز المخزون المتوفر لـ ${productInCart.name}.`, variant: "destructive" });
         return;
       }
       if (newQuantity <= 0) {
@@ -82,31 +82,31 @@ const PosPage = () => {
 
   const handleAddWeighedItem = () => {
     if (!selectedWeighedProduct || !totalPriceForWeighed) {
-      toast({ title: "Error", description: "Please select a weighable product and enter total price.", variant: "destructive"});
+      toast({ title: "خطأ", description: "يرجى تحديد منتج قابل للوزن وإدخال السعر الإجمالي.", variant: "destructive"});
       return;
     }
     const price = parseFloat(totalPriceForWeighed);
     if (isNaN(price) || price <= 0) {
-      toast({ title: "Error", description: "Please enter a valid total price.", variant: "destructive"});
+      toast({ title: "خطأ", description: "يرجى إدخال سعر إجمالي صالح.", variant: "destructive"});
       return;
     }
     const calculatedWeight = price / selectedWeighedProduct.price;
     
     if (cart.find(item => item.id === selectedWeighedProduct.id)) {
-      toast({ title: "Info", description: `${selectedWeighedProduct.name} is already in cart. Remove to re-add as weighed.`, variant: "default" });
+      toast({ title: "معلومة", description: `${selectedWeighedProduct.name} موجود بالفعل في السلة. قم بإزالته لإعادة إضافته كمنتج موزون.`, variant: "default" });
       return;
     }
 
     setCart([...cart, { 
       ...selectedWeighedProduct, 
-      quantity: 1, // Represents one instance of this weighed purchase
-      price: price, // Override unit price with total price for this entry
+      quantity: 1, 
+      price: price, 
       isWeighed: true, 
       calculatedWeight 
     }]);
     setSelectedWeighedProduct(null);
     setTotalPriceForWeighed('');
-    toast({ title: "Item Added", description: `${selectedWeighedProduct.name} added to cart.` });
+    toast({ title: "تمت إضافة المنتج", description: `${selectedWeighedProduct.name} أضيف إلى السلة.` });
   };
 
   const cartTotal = useMemo(() => 
@@ -116,35 +116,33 @@ const PosPage = () => {
 
   const handleCheckout = () => {
     if (cart.length === 0) {
-      toast({ title: "Empty Cart", description: "Please add items to the cart before checkout.", variant: "destructive"});
+      toast({ title: "سلة فارغة", description: "يرجى إضافة منتجات إلى السلة قبل الدفع.", variant: "destructive"});
       return;
     }
-    // Mock checkout process
-    toast({ title: "Checkout Successful", description: `Total: $${cartTotal.toFixed(2)}. Thank you!` });
-    setCart([]); // Clear cart after checkout
+    toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. شكراً لك!` });
+    setCart([]); 
   };
 
-  const weighableProducts = useMemo(() => availableProducts.filter(p => p.name.toLowerCase().includes('(per kg)')), []);
+  const weighableProducts = useMemo(() => availableProducts.filter(p => p.name.toLowerCase().includes('(للكيلو)')), []);
 
 
   return (
     <AppLayout>
       <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)]">
-        {/* Left Panel: Product Selection & Weight Tool */}
         <div className="lg:w-2/5 flex flex-col gap-6">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-foreground">Product Search</CardTitle>
+              <CardTitle className="font-headline text-xl text-foreground">بحث عن منتج</CardTitle>
             </CardHeader>
             <CardContent className="flex gap-2">
               <div className="relative flex-grow">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input 
                   type="text" 
-                  placeholder="Search products or scan barcode..." 
+                  placeholder="ابحث عن منتجات أو امسح الباركود..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-input/50 focus:bg-input"
+                  className="pr-10 bg-input/50 focus:bg-input"
                 />
               </div>
               <Button variant="outline" size="icon" className="shrink-0">
@@ -155,10 +153,10 @@ const PosPage = () => {
 
           <Card className="shadow-lg flex-1 flex flex-col min-h-0">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-foreground">Quick Add</CardTitle>
+              <CardTitle className="font-headline text-xl text-foreground">إضافة سريعة</CardTitle>
             </CardHeader>
             <CardContent className="flex-1 p-3 overflow-hidden">
-              <ScrollArea className="h-full pr-3">
+              <ScrollArea className="h-full pl-3">
                 {filteredProducts.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {filteredProducts.slice(0, 9).map(product => (
@@ -167,16 +165,16 @@ const PosPage = () => {
                         variant="outline" 
                         className="h-auto p-3 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[80px]"
                         onClick={() => addToCart(product)}
-                        disabled={product.stock === 0 && !product.name.toLowerCase().includes('(per kg)')}
+                        disabled={product.stock === 0 && !product.name.toLowerCase().includes('(للكيلو)')}
                       >
                         <Image src={product.image!} alt={product.name} width={32} height={32} className="mb-1 rounded" data-ai-hint="product item" />
                         <span className="text-xs">{product.name}</span>
-                        <span className="text-xs font-semibold text-primary">${product.price.toFixed(2)}{product.name.toLowerCase().includes('(per kg)') ? '/kg' : ''}</span>
+                        <span className="text-xs font-semibold text-primary">{product.price.toFixed(2)} ر.س{product.name.toLowerCase().includes('(للكيلو)') ? '/كجم' : ''}</span>
                       </Button>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-sm text-center py-4">No products match search or all are in cart.</p>
+                  <p className="text-muted-foreground text-sm text-center py-4">لا توجد منتجات تطابق البحث أو كلها في السلة.</p>
                 )}
               </ScrollArea>
             </CardContent>
@@ -184,7 +182,7 @@ const PosPage = () => {
           
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-foreground">Weighed Products</CardTitle>
+              <CardTitle className="font-headline text-xl text-foreground">منتجات موزونة</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <select 
@@ -192,47 +190,46 @@ const PosPage = () => {
                 onChange={(e) => setSelectedWeighedProduct(weighableProducts.find(p => p.id === e.target.value) || null)}
                 className="w-full p-2 border rounded-md bg-input/50 focus:bg-input text-sm"
               >
-                <option value="">Select weighable product</option>
+                <option value="">اختر منتج قابل للوزن</option>
                 {weighableProducts.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} (${p.price}/kg)</option>
+                  <option key={p.id} value={p.id}>{p.name} ({p.price} ر.س/كجم)</option>
                 ))}
               </select>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <DollarSign className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
                   type="number" 
-                  placeholder="Enter total price for item" 
+                  placeholder="أدخل السعر الإجمالي للمنتج" 
                   value={totalPriceForWeighed}
                   onChange={(e) => setTotalPriceForWeighed(e.target.value)}
-                  className="pl-9 bg-input/50 focus:bg-input"
+                  className="pr-9 bg-input/50 focus:bg-input"
                   disabled={!selectedWeighedProduct}
                 />
               </div>
               <Button onClick={handleAddWeighedItem} className="w-full" disabled={!selectedWeighedProduct || !totalPriceForWeighed}>
-                <Scale className="mr-2 h-4 w-4" /> Add Weighed Item
+                <Scale className="ml-2 h-4 w-4" /> أضف منتج موزون
               </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Panel: Cart & Checkout */}
         <Card className="lg:w-3/5 shadow-lg flex flex-col h-full">
           <CardHeader className="flex-shrink-0">
-            <CardTitle className="font-headline text-2xl text-foreground">Current Sale</CardTitle>
+            <CardTitle className="font-headline text-2xl text-foreground">البيع الحالي</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden p-0">
             <ScrollArea className="h-full">
               {cart.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
-                  <p className="text-muted-foreground text-lg p-6">Your cart is empty.</p>
+                  <p className="text-muted-foreground text-lg p-6">السلة فارغة.</p>
                 </div>
               ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[60%]">Product</TableHead>
-                    <TableHead className="text-center w-[20%]">Quantity/Weight</TableHead>
-                    <TableHead className="text-right w-[20%]">Price</TableHead>
+                    <TableHead className="w-[60%]">المنتج</TableHead>
+                    <TableHead className="text-center w-[20%]">الكمية/الوزن</TableHead>
+                    <TableHead className="text-left w-[20%]">السعر</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -241,17 +238,17 @@ const PosPage = () => {
                       <TableRow key={item.id}>
                         <TableCell>
                           <div className="flex items-center">
-                            <Image src={item.image!} alt={item.name} width={32} height={32} className="mr-2 rounded" data-ai-hint="product item" />
+                            <Image src={item.image!} alt={item.name} width={32} height={32} className="ml-2 rounded" data-ai-hint="product item"/>
                             <div>
                               <p className="font-medium text-foreground">{item.name}</p>
-                              {!item.isWeighed && <p className="text-xs text-muted-foreground">${item.price.toFixed(2)} each</p>}
-                              {item.isWeighed && <p className="text-xs text-muted-foreground">{item.calculatedWeight?.toFixed(3)} kg @ ${item.price / (item.calculatedWeight || 1) : 0 /kg}</p>}
+                              {!item.isWeighed && <p className="text-xs text-muted-foreground">{item.price.toFixed(2)} ر.س للقطعة</p>}
+                              {item.isWeighed && <p className="text-xs text-muted-foreground">{item.calculatedWeight?.toFixed(3)} كجم @ {(item.price / (item.calculatedWeight || 1)).toFixed(2)} ر.س/كجم</p>}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
                           {item.isWeighed ? (
-                            <span>{item.calculatedWeight?.toFixed(3)} kg</span>
+                            <span>{item.calculatedWeight?.toFixed(3)} كجم</span>
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
@@ -264,8 +261,8 @@ const PosPage = () => {
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-foreground">
-                          ${item.isWeighed ? item.price.toFixed(2) : (item.price * item.quantity).toFixed(2)}
+                        <TableCell className="text-left font-semibold text-foreground">
+                          {(item.isWeighed ? item.price : (item.price * item.quantity)).toFixed(2)} ر.س
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/80" onClick={() => removeFromCart(item.id)}>
@@ -282,11 +279,11 @@ const PosPage = () => {
           <Separator className="my-0" />
           <CardFooter className="flex-shrink-0 p-6 space-y-4">
             <div className="flex justify-between items-center text-xl font-semibold">
-              <span className="text-muted-foreground">Total:</span>
-              <span className="font-headline text-foreground">${cartTotal.toFixed(2)}</span>
+              <span className="text-muted-foreground">الإجمالي:</span>
+              <span className="font-headline text-foreground">{cartTotal.toFixed(2)} ر.س</span>
             </div>
             <Button className="w-full text-lg py-6 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleCheckout}>
-              <CreditCard className="mr-2 h-5 w-5" /> Checkout
+              <CreditCard className="ml-2 h-5 w-5" /> الدفع
             </Button>
           </CardFooter>
         </Card>

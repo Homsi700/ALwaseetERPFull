@@ -1,3 +1,4 @@
+
 // src/app/reports/page.tsx
 "use client";
 
@@ -23,8 +24,8 @@ const FinancialReportsPage = () => {
   const handleSubmit = async () => {
     if (!reportText.trim() || !userQuestion.trim()) {
       toast({
-        title: "Missing Information",
-        description: "Please provide both the financial report text and your question.",
+        title: "معلومات ناقصة",
+        description: "يرجى تقديم نص التقرير المالي وسؤالك.",
         variant: "destructive",
       });
       return;
@@ -38,17 +39,17 @@ const FinancialReportsPage = () => {
       const result: ExplainFinancialReportOutput = await explainFinancialReport(input);
       setExplanation(result.simplifiedExplanation);
       toast({
-        title: "Explanation Generated",
-        description: "The AI has provided an explanation for your report.",
+        title: "تم إنشاء الشرح",
+        description: "قدم الذكاء الاصطناعي شرحًا لتقريرك.",
       });
     } catch (error) {
-      console.error("Error generating explanation:", error);
+      console.error("خطأ في إنشاء الشرح:", error);
       toast({
-        title: "Error",
-        description: "Failed to generate explanation. Please try again.",
+        title: "خطأ",
+        description: "فشل في إنشاء الشرح. يرجى المحاولة مرة أخرى.",
         variant: "destructive",
       });
-      setExplanation("An error occurred while processing your request.");
+      setExplanation("حدث خطأ أثناء معالجة طلبك.");
     } finally {
       setIsLoading(false);
     }
@@ -59,7 +60,7 @@ const FinancialReportsPage = () => {
       navigator.clipboard.writeText(explanation);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      toast({ title: "Copied!", description: "Explanation copied to clipboard." });
+      toast({ title: "تم النسخ!", description: "تم نسخ الشرح إلى الحافظة." });
     }
   };
 
@@ -67,42 +68,42 @@ const FinancialReportsPage = () => {
     <AppLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center">
-          <h1 className="text-3xl font-headline font-semibold text-foreground">Financial Report Assistant</h1>
+          <h1 className="text-3xl font-headline font-semibold text-foreground">مساعد التقارير المالية</h1>
           <p className="text-muted-foreground mt-2">
-            Simplify complex financial report terminology and understand intricate relationships within your reports using AI.
+            بسّط مصطلحات التقارير المالية المعقدة وافهم العلاقات المعقدة داخل تقاريرك باستخدام الذكاء الاصطناعي.
           </p>
         </div>
 
         <Card className="shadow-xl">
           <CardHeader>
-            <CardTitle className="font-headline text-2xl text-foreground">Analyze Your Report</CardTitle>
-            <CardDescription>Paste your financial report text and ask a specific question about it.</CardDescription>
+            <CardTitle className="font-headline text-2xl text-foreground">حلل تقريرك</CardTitle>
+            <CardDescription>ألصق نص تقريرك المالي واطرح سؤالاً محدداً حوله.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
-              <Label htmlFor="reportText" className="text-lg font-medium text-muted-foreground">Financial Report Text</Label>
+              <Label htmlFor="reportText" className="text-lg font-medium text-muted-foreground">نص التقرير المالي</Label>
               <Textarea
                 id="reportText"
                 value={reportText}
                 onChange={(e) => setReportText(e.target.value)}
-                placeholder="Paste the content of your financial report here..."
+                placeholder="ألصق محتوى تقريرك المالي هنا..."
                 rows={10}
                 className="mt-2 bg-input/50 focus:bg-input resize-y"
               />
             </div>
             <div>
-              <Label htmlFor="userQuestion" className="text-lg font-medium text-muted-foreground">Your Question</Label>
+              <Label htmlFor="userQuestion" className="text-lg font-medium text-muted-foreground">سؤالك</Label>
               <Input
                 id="userQuestion"
                 value={userQuestion}
                 onChange={(e) => setUserQuestion(e.target.value)}
-                placeholder="e.g., 'Explain the P&L statement in simple terms.' or 'What does EBITDA mean?'"
+                placeholder="مثال: 'اشرح بيان الأرباح والخسائر بعبارات بسيطة.' أو 'ماذا يعني EBITDA؟'"
                 className="mt-2 bg-input/50 focus:bg-input"
               />
             </div>
             <Button onClick={handleSubmit} disabled={isLoading} className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground">
-              <Wand2 className="mr-2 h-5 w-5" />
-              {isLoading ? 'Analyzing...' : 'Get Explanation'}
+              <Wand2 className="ml-2 h-5 w-5" />
+              {isLoading ? 'يتم التحليل...' : 'احصل على الشرح'}
             </Button>
           </CardContent>
         </Card>
@@ -111,10 +112,10 @@ const FinancialReportsPage = () => {
           <Card className="shadow-xl animate-fadeIn">
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
-                <CardTitle className="font-headline text-2xl text-foreground">AI Generated Explanation</CardTitle>
-                <CardDescription>Here's a simplified explanation based on your report and question.</CardDescription>
+                <CardTitle className="font-headline text-2xl text-foreground">شرح مُنشأ بواسطة الذكاء الاصطناعي</CardTitle>
+                <CardDescription>إليك شرح مبسط بناءً على تقريرك وسؤالك.</CardDescription>
               </div>
-              <Button variant="ghost" size="icon" onClick={handleCopy} title="Copy explanation">
+              <Button variant="ghost" size="icon" onClick={handleCopy} title="نسخ الشرح">
                 {copied ? <Check className="h-5 w-5 text-green-500" /> : <Copy className="h-5 w-5 text-muted-foreground" />}
               </Button>
             </CardHeader>
@@ -128,7 +129,7 @@ const FinancialReportsPage = () => {
          {isLoading && !explanation && (
           <div className="flex justify-center items-center p-10">
             <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p className="ml-4 text-muted-foreground">AI is thinking...</p>
+            <p className="mr-4 text-muted-foreground">الذكاء الاصطناعي يفكر...</p>
           </div>
         )}
       </div>

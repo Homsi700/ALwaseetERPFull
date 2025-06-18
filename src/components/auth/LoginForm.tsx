@@ -1,3 +1,4 @@
+
 // src/components/auth/LoginForm.tsx
 "use client";
 
@@ -18,27 +19,24 @@ export const LoginForm = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    // Basic validation
     if (!email || !password) {
       toast({
-        title: "Login Error",
-        description: "Please enter both email and password.",
+        title: "خطأ في تسجيل الدخول",
+        description: "يرجى إدخال البريد الإلكتروني وكلمة المرور.",
         variant: "destructive",
       });
       return;
     }
-    // In a real app, you'd call an API here.
-    // For demo, we'll use a hardcoded user.
     if (email === 'admin@alwaseet.com' && password === 'password') {
-      login(email, 'Admin User');
+      login(email, 'مستخدم مسؤول');
       toast({
-        title: "Login Successful",
-        description: "Welcome back!",
+        title: "تم تسجيل الدخول بنجاح",
+        description: "مرحباً بعودتك!",
       });
     } else {
       toast({
-        title: "Login Failed",
-        description: "Invalid email or password.",
+        title: "فشل تسجيل الدخول",
+        description: "بريد إلكتروني أو كلمة مرور غير صالحة.",
         variant: "destructive",
       });
     }
@@ -51,13 +49,13 @@ export const LoginForm = () => {
           <div className="flex justify-center items-center mb-4">
             <Building className="h-12 w-12 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-headline text-primary">Al-Waseet UI</CardTitle>
-          <CardDescription className="text-muted-foreground">Securely access your inventory and sales dashboard.</CardDescription>
+          <CardTitle className="text-3xl font-headline text-primary">الوسيط UI</CardTitle>
+          <CardDescription className="text-muted-foreground">قم بالوصول بأمان إلى لوحة تحكم المخزون والمبيعات الخاصة بك.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">البريد الإلكتروني</Label>
               <Input
                 id="email"
                 type="email"
@@ -69,7 +67,7 @@ export const LoginForm = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">كلمة المرور</Label>
               <Input
                 id="password"
                 type="password"
@@ -83,13 +81,13 @@ export const LoginForm = () => {
           </CardContent>
           <CardFooter>
             <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-              <LogIn className="mr-2 h-5 w-5" /> Sign In
+              <LogIn className="ml-2 h-5 w-5" /> تسجيل الدخول
             </Button>
           </CardFooter>
         </form>
       </Card>
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        Demo credentials: <code className="font-code bg-muted px-1 py-0.5 rounded">admin@alwaseet.com</code> / <code className="font-code bg-muted px-1 py-0.5 rounded">password</code>
+        بيانات الدخول التجريبية: <code className="font-code bg-muted px-1 py-0.5 rounded">admin@alwaseet.com</code> / <code className="font-code bg-muted px-1 py-0.5 rounded">password</code>
       </p>
     </div>
   );

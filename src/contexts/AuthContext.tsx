@@ -1,3 +1,4 @@
+
 // src/contexts/AuthContext.tsx
 "use client";
 
@@ -25,7 +26,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
 
   useEffect(() => {
-    // Simulate checking for an existing session
     const storedUser = localStorage.getItem('alwaseetUser');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (email: string, name: string = 'Demo User') => {
+  const login = (email: string, name: string = 'مستخدم تجريبي') => {
     const demoUser: User = { id: '1', email, name };
     setUser(demoUser);
     localStorage.setItem('alwaseetUser', JSON.stringify(demoUser));
