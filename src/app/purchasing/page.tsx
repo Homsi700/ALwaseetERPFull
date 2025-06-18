@@ -2,12 +2,12 @@
 // src/app/purchasing/page.tsx
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PlusCircle, FileBox, Users, FileText, Filter, Printer, Trash2 as Trash2Icon, PackageSearch } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,8 +36,8 @@ interface Supplier {
 }
 
 interface PurchaseOrderItem {
-  product_id: string; // Corresponds to products.id
-  productName?: string; // For display, fetched based on product_id
+  product_id: string;
+  productName?: string; 
   quantity: number;
   unit_price: number;
   total_price: number;
@@ -48,10 +48,10 @@ interface PurchaseOrder {
   created_at?: string;
   order_number: string;
   supplier_id: string;
-  supplier_name?: string; // For display, fetched based on supplier_id
+  supplier_name?: string; 
   order_date: string;
   expected_delivery_date?: string;
-  items: PurchaseOrderItem[];
+  items: PurchaseOrderItem[]; // Stored as JSONB
   total_amount: number;
   status: 'مسودة' | 'مرسل' | 'مؤكد' | 'مستلم جزئياً' | 'مستلم بالكامل' | 'ملغى';
 }
@@ -60,19 +60,18 @@ interface PurchaseInvoice {
   id: string;
   created_at?: string;
   invoice_number: string;
-  purchase_order_id?: string; // Corresponds to PurchaseOrder.order_number (can be text)
+  purchase_order_id?: string; 
   supplier_id: string;
-  supplier_name?: string; // For display
+  supplier_name?: string; 
   invoice_date: string;
   due_date?: string;
-  items: PurchaseOrderItem[];
+  items: PurchaseOrderItem[]; // Stored as JSONB
   sub_total: number;
   tax_amount: number;
   grand_total: number;
   status: 'غير مدفوعة' | 'مدفوعة جزئياً' | 'مدفوعة بالكامل' | 'متأخرة';
 }
 
-// Helper to map JS Supplier to Supabase snake_case
 const mapToSupabaseSupplier = (supplier: Omit<Supplier, 'id' | 'created_at'> & { id?: string }) => ({
   name: supplier.name,
   contact_person: supplier.contact_person,
@@ -82,26 +81,24 @@ const mapToSupabaseSupplier = (supplier: Omit<Supplier, 'id' | 'created_at'> & {
   notes: supplier.notes,
 });
 
-// Helper to map Supabase Supplier to JS camelCase
 const mapFromSupabaseSupplier = (data: any): Supplier => ({
   id: data.id,
   created_at: data.created_at,
   name: data.name,
-  contactPerson: data.contact_person,
+  contact_person: data.contact_person,
   email: data.email,
   phone: data.phone,
   address: data.address,
   notes: data.notes,
 });
 
-// Helper for PurchaseOrder (assuming items are stored as JSONB or will be handled by related table)
-const mapToSupabasePO = (po: Omit<PurchaseOrder, 'id' | 'created_at' | 'supplier_name' | 'total_amount'> & { id?: string, items: PurchaseOrderItem[] }) => ({
+const mapToSupabasePO = (po: Omit<PurchaseOrder, 'id' | 'created_at' | 'supplier_name'> & { id?: string }) => ({
   order_number: po.order_number,
   supplier_id: po.supplier_id,
   order_date: po.order_date,
   expected_delivery_date: po.expected_delivery_date,
-  items: po.items, // Supabase can handle JSONB directly
-  total_amount: po.items.reduce((sum, item) => sum + item.total_price, 0),
+  items: po.items,
+  total_amount: po.total_amount,
   status: po.status,
 });
 
@@ -110,7 +107,7 @@ const mapFromSupabasePO = (data: any, supplierName?: string): PurchaseOrder => (
   created_at: data.created_at,
   order_number: data.order_number,
   supplier_id: data.supplier_id,
-  supplier_name: supplierName || data.supplier_id, // Placeholder, better to join or fetch separately
+  supplier_name: supplierName || data.supplier_id,
   order_date: data.order_date,
   expected_delivery_date: data.expected_delivery_date,
   items: data.items || [],
@@ -118,18 +115,16 @@ const mapFromSupabasePO = (data: any, supplierName?: string): PurchaseOrder => (
   status: data.status,
 });
 
-
-// Helper for PurchaseInvoice
-const mapToSupabaseInvoice = (inv: Omit<PurchaseInvoice, 'id' | 'created_at' | 'supplier_name' | 'sub_total' | 'grand_total'> & {id?:string, items: PurchaseOrderItem[]}) => ({
+const mapToSupabaseInvoice = (inv: Omit<PurchaseInvoice, 'id' | 'created_at' | 'supplier_name'> & {id?:string}) => ({
     invoice_number: inv.invoice_number,
     purchase_order_id: inv.purchase_order_id,
     supplier_id: inv.supplier_id,
     invoice_date: inv.invoice_date,
     due_date: inv.due_date,
     items: inv.items,
-    sub_total: inv.items.reduce((sum, item) => sum + item.total_price, 0),
+    sub_total: inv.sub_total,
     tax_amount: inv.tax_amount,
-    grand_total: inv.items.reduce((sum, item) => sum + item.total_price, 0) + inv.tax_amount,
+    grand_total: inv.grand_total,
     status: inv.status,
 });
 
@@ -175,7 +170,6 @@ const PurchasingPage = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Fetch Suppliers
   const fetchSuppliers = useCallback(async () => {
     if (!user) return;
     setIsLoadingSuppliers(true);
@@ -190,40 +184,37 @@ const PurchasingPage = () => {
     }
   }, [toast, user]);
 
-  // Fetch Purchase Orders
   const fetchPOs = useCallback(async () => {
     if (!user) return;
     setIsLoadingPOs(true);
     try {
-      // For simplicity, fetching POs then fetching supplier names separately if needed, or join in Supabase.
-      const { data: posData, error: posError } = await supabase.from('purchase_orders').select('*').order('order_date', { ascending: false });
+      const { data: posData, error: posError } = await supabase
+        .from('purchase_orders')
+        .select('*, suppliers(name)')
+        .order('order_date', { ascending: false });
       if (posError) throw posError;
       
-      const populatedPOs = await Promise.all(posData.map(async (po) => {
-        const supplier = suppliers.find(s => s.id === po.supplier_id);
-        return mapFromSupabasePO(po, supplier?.name);
-      }));
+      const populatedPOs = posData.map((po: any) => mapFromSupabasePO(po, po.suppliers?.name));
       setPurchaseOrders(populatedPOs);
 
-    } catch (error: any) {
+    } catch (error: any)      {
       toast({ title: 'خطأ في جلب أوامر الشراء', description: error.message, variant: 'destructive' });
     } finally {
       setIsLoadingPOs(false);
     }
-  }, [toast, user, suppliers]);
+  }, [toast, user]);
 
-  // Fetch Purchase Invoices
   const fetchInvoices = useCallback(async () => {
     if (!user) return;
     setIsLoadingInvoices(true);
     try {
-      const { data: invData, error: invError } = await supabase.from('purchase_invoices').select('*').order('invoice_date', { ascending: false });
+      const { data: invData, error: invError } = await supabase
+        .from('purchase_invoices')
+        .select('*, suppliers(name)')
+        .order('invoice_date', { ascending: false });
       if (invError) throw invError;
 
-      const populatedInvoices = await Promise.all(invData.map(async (inv) => {
-        const supplier = suppliers.find(s => s.id === inv.supplier_id);
-        return mapFromSupabaseInvoice(inv, supplier?.name);
-      }));
+      const populatedInvoices = invData.map((inv: any) => mapFromSupabaseInvoice(inv, inv.suppliers?.name));
       setInvoices(populatedInvoices);
 
     } catch (error: any) {
@@ -231,9 +222,8 @@ const PurchasingPage = () => {
     } finally {
       setIsLoadingInvoices(false);
     }
-  }, [toast, user, suppliers]);
+  }, [toast, user]);
 
-  // Fetch Products (for forms)
   const fetchProductsForForm = useCallback(async () => {
     if(!user) return;
     setIsLoadingProducts(true);
@@ -246,7 +236,7 @@ const PurchasingPage = () => {
             purchasePrice: p.purchase_price,
             unit: p.unit,
             stock: p.stock,
-        } as ProductType))); // Cast to a simpler ProductType for form use
+        } as ProductType)));
     } catch (error: any) {
         toast({ title: 'خطأ في جلب المنتجات للنماذج', description: error.message, variant: 'destructive'});
     } finally {
@@ -258,32 +248,26 @@ const PurchasingPage = () => {
   useEffect(() => {
     if (user) {
       fetchSuppliers();
-      fetchProductsForForm(); // Fetch products once for all forms
+      fetchProductsForForm(); 
+      fetchPOs();
+      fetchInvoices();
     }
-  }, [user, fetchSuppliers, fetchProductsForForm]);
-
-  useEffect(() => {
-    if (user && suppliers.length > 0) { // Fetch POs and Invoices after suppliers are loaded
-        fetchPOs();
-        fetchInvoices();
-    }
-  }, [user, suppliers, fetchPOs, fetchInvoices]);
+  }, [user, fetchSuppliers, fetchProductsForForm, fetchPOs, fetchInvoices]);
 
 
-  // Supplier Handlers
   const handleAddSupplier = () => { setEditingSupplier(undefined); setIsSupplierModalOpen(true); };
   const handleEditSupplier = (supplier: Supplier) => { setEditingSupplier(supplier); setIsSupplierModalOpen(true); };
   const handleDeleteSupplier = async (id: string) => {
     try {
       const { error } = await supabase.from('suppliers').delete().eq('id', id);
       if (error) throw error;
-      fetchSuppliers(); // Re-fetch
+      fetchSuppliers();
       toast({ title: 'تم حذف المورد'});
     } catch (error: any) {
       toast({ title: 'خطأ في حذف المورد', description: error.message, variant: 'destructive'});
     }
   };
-  const handleSaveSupplier = async (data: Omit<Supplier, 'id' | 'created_at'>) => {
+  const handleSaveSupplier = async (data: Omit<Supplier, 'id' | 'created_at'> & {id?: string}) => {
     const supabaseData = mapToSupabaseSupplier(data);
     try {
       if (editingSupplier) {
@@ -303,13 +287,10 @@ const PurchasingPage = () => {
     }
   };
 
-  // Purchase Order Handlers
   const handleAddPO = () => { setEditingPO(undefined); setCurrentPOItems([]); setIsPOModalOpen(true); };
-  const handleEditPO = (po: PurchaseOrder) => { setEditingPO(po); setCurrentPOItems(po.items); setIsPOModalOpen(true); };
+  const handleEditPO = (po: PurchaseOrder) => { setEditingPO(po); setCurrentPOItems(po.items || []); setIsPOModalOpen(true); };
   const handleDeletePO = async (id: string) => { 
     try {
-        // Note: If PO items are in a separate table, they need to be deleted first or use cascade delete.
-        // For JSONB items, deleting the PO record is enough.
         const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
         if (error) throw error;
         fetchPOs();
@@ -318,11 +299,11 @@ const PurchasingPage = () => {
         toast({ title: 'خطأ في حذف أمر الشراء', description: error.message, variant: 'destructive'});
     }
   };
-  const handleSavePO = async (data: Omit<PurchaseOrder, 'id'|'created_at'|'supplier_name'|'total_amount'> & { items: PurchaseOrderItem[]}) => {
-    const poToSave = {
-        ...data,
-        order_number: data.order_number || `PO-${Date.now().toString().slice(-6)}`, // Generate if new
-        items: currentPOItems, // Ensure current items are used
+  const handleSavePO = async (formData: Omit<PurchaseOrder, 'id'|'created_at'|'supplier_name'|'total_amount'> & {items: PurchaseOrderItem[], total_amount?: number}) => {
+    const poToSave: Omit<PurchaseOrder, 'id'|'created_at'|'supplier_name'> = {
+        ...formData,
+        order_number: formData.order_number || `PO-${Date.now().toString().slice(-6)}`,
+        items: currentPOItems,
         total_amount: currentPOItems.reduce((sum, item) => sum + item.total_price, 0),
     };
     const supabaseData = mapToSupabasePO(poToSave);
@@ -352,7 +333,7 @@ const PurchasingPage = () => {
     if (field === 'product_id') {
         const product = availableProducts.find(p => p.id === value);
         item.productName = product?.name || '';
-        item.unit_price = product?.purchasePrice || 0; // Use purchasePrice for POs
+        item.unit_price = product?.purchasePrice || 0;
     }
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
       item.total_price = (item.quantity || 0) * (item.unit_price || 0);
@@ -362,13 +343,10 @@ const PurchasingPage = () => {
   const addPOItem = () => setCurrentPOItems([...currentPOItems, { product_id: '', productName: '', quantity: 1, unit_price: 0, total_price: 0 }]);
   const removePOItem = (index: number) => setCurrentPOItems(currentPOItems.filter((_, i) => i !== index));
 
-
-  // Purchase Invoice Handlers
   const handleAddInvoice = () => { setEditingInvoice(undefined); setCurrentInvoiceItems([]); setIsInvoiceModalOpen(true); };
-  const handleEditInvoice = (invoice: PurchaseInvoice) => { setEditingInvoice(invoice); setCurrentInvoiceItems(invoice.items); setIsInvoiceModalOpen(true); };
+  const handleEditInvoice = (invoice: PurchaseInvoice) => { setEditingInvoice(invoice); setCurrentInvoiceItems(invoice.items || []); setIsInvoiceModalOpen(true); };
   const handleDeleteInvoice = async (id: string) => { 
     try {
-        // Similar to POs, handle items if they are in a separate table.
         const { error } = await supabase.from('purchase_invoices').delete().eq('id', id);
         if(error) throw error;
         fetchInvoices();
@@ -377,14 +355,16 @@ const PurchasingPage = () => {
         toast({ title: 'خطأ في حذف الفاتورة', description: error.message, variant: 'destructive'});
     }
   };
-  const handleSaveInvoice = async (data: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'> & { items: PurchaseOrderItem[], tax_amount: number}) => {
-    const invoiceToSave = {
-        ...data,
-        invoice_number: data.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
+  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'> & { items: PurchaseOrderItem[], tax_amount?: number, sub_total?: number, grand_total?: number}) => {
+    const subTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
+    const taxAmount = formData.tax_amount || 0;
+    const invoiceToSave: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> = {
+        ...formData,
+        invoice_number: formData.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
         items: currentInvoiceItems,
-        sub_total: currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0),
-        tax_amount: data.tax_amount || 0,
-        grand_total: currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0) + (data.tax_amount || 0),
+        sub_total: subTotal,
+        tax_amount: taxAmount,
+        grand_total: subTotal + taxAmount,
     };
     const supabaseData = mapToSupabaseInvoice(invoiceToSave);
 
@@ -393,11 +373,11 @@ const PurchasingPage = () => {
             const { error } = await supabase.from('purchase_invoices').update(supabaseData).eq('id', editingInvoice.id);
             if (error) throw error;
             toast({ title: 'تم تحديث الفاتورة'});
+            // Note: Stock update on edit is complex, needs to compare old vs new items. For now, only on new.
         } else {
             const { data: newInvoice, error } = await supabase.from('purchase_invoices').insert(supabaseData).select().single();
             if (error) throw error;
             if (newInvoice) {
-                 // Update stock for each item in the invoice
                 for (const item of currentInvoiceItems) {
                     const product = availableProducts.find(p => p.id === item.product_id);
                     if (product) {
@@ -409,7 +389,7 @@ const PurchasingPage = () => {
                     }
                 }
                 toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-                fetchProductsForForm(); // Re-fetch products to reflect stock changes
+                fetchProductsForForm(); 
             }
         }
         fetchInvoices();
@@ -427,7 +407,7 @@ const PurchasingPage = () => {
     if (field === 'product_id') {
         const product = availableProducts.find(p => p.id === value);
         item.productName = product?.name || '';
-        item.unit_price = product?.purchasePrice || 0; // Use purchasePrice
+        item.unit_price = product?.purchasePrice || 0;
     }
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
       item.total_price = (item.quantity || 0) * (item.unit_price || 0);
@@ -625,7 +605,7 @@ const PurchasingPage = () => {
         <Dialog open={isSupplierModalOpen} onOpenChange={(isOpen) => { setIsSupplierModalOpen(isOpen); if (!isOpen) setEditingSupplier(undefined); }}>
           <DialogContent className="sm:max-w-lg bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingSupplier ? 'تعديل المورد' : 'إضافة مورد جديد'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveSupplier({name: fd.get('s-name') as string, contact_person: fd.get('s-contact') as string, email: fd.get('s-email') as string, phone: fd.get('s-phone') as string, address: fd.get('s-address') as string, notes: fd.get('s-notes') as string });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveSupplier({id: editingSupplier?.id, name: fd.get('s-name') as string, contact_person: fd.get('s-contact') as string, email: fd.get('s-email') as string, phone: fd.get('s-phone') as string, address: fd.get('s-address') as string, notes: fd.get('s-notes') as string });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div><Label htmlFor="s-name">اسم المورد</Label><Input id="s-name" name="s-name" defaultValue={editingSupplier?.name} required className="mt-1 bg-input/50"/></div>
               <div><Label htmlFor="s-contact">مسؤول التواصل</Label><Input id="s-contact" name="s-contact" defaultValue={editingSupplier?.contact_person} className="mt-1 bg-input/50"/></div>
               <div><Label htmlFor="s-email">البريد الإلكتروني</Label><Input id="s-email" name="s-email" type="email" defaultValue={editingSupplier?.email} className="mt-1 bg-input/50"/></div>
@@ -640,11 +620,11 @@ const PurchasingPage = () => {
         <Dialog open={isPOModalOpen} onOpenChange={(isOpen) => { setIsPOModalOpen(isOpen); if (!isOpen) { setEditingPO(undefined); setCurrentPOItems([]);} }}>
           <DialogContent className="sm:max-w-2xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingPO ? `تعديل أمر الشراء: ${editingPO.order_number}` : 'إنشاء أمر شراء جديد'}</DialogTitle></DialogHeader>
-             <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSavePO({order_number: editingPO?.order_number || `PO-${Date.now().toString().slice(-6)}`, order_date: fd.get('po-date') as string, expected_delivery_date: fd.get('po-expdate') as string | undefined, supplier_id: fd.get('po-supplier') as string, status: fd.get('po-status') as PurchaseOrder['status'], items: currentPOItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+             <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSavePO({ order_number: editingPO?.order_number, order_date: fd.get('po-date') as string, expected_delivery_date: fd.get('po-expdate') as string | undefined, supplier_id: fd.get('po-supplier') as string, status: fd.get('po-status') as PurchaseOrder['status'], items: currentPOItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><Label htmlFor="po-supplier">المورد</Label>
                     <Select name="po-supplier" defaultValue={editingPO?.supplier_id} required dir="rtl">
-                        <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder="اختر المورد" /></SelectTrigger>
+                        <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder={isLoadingSuppliers ? "جاري التحميل..." : "اختر المورد"} /></SelectTrigger>
                         <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
@@ -689,17 +669,17 @@ const PurchasingPage = () => {
         <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]);} }}>
           <DialogContent className="sm:max-w-2xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingInvoice ? `تعديل فاتورة الشراء: ${editingInvoice.invoice_number}` : 'إضافة فاتورة شراء جديدة'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: editingInvoice?.invoice_number || `INV-${Date.now().toString().slice(-6)}`, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, purchase_order_id: fd.get('inv-po') as string | undefined, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), items: currentInvoiceItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, purchase_order_id: fd.get('inv-po') as string | undefined, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), items: currentInvoiceItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><Label htmlFor="inv-supplier">المورد</Label>
                         <Select name="inv-supplier" defaultValue={editingInvoice?.supplier_id} required dir="rtl">
-                            <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder="اختر المورد" /></SelectTrigger>
+                            <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder={isLoadingSuppliers ? "جاري التحميل..." : "اختر المورد"} /></SelectTrigger>
                             <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                     <div><Label htmlFor="inv-po">أمر الشراء (اختياري)</Label>
                         <Select name="inv-po" defaultValue={editingInvoice?.purchase_order_id || ""} dir="rtl">
-                            <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder="اختر أمر شراء (إن وجد)" /></SelectTrigger>
+                            <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder={isLoadingPOs ? "جاري التحميل..." : "اختر أمر شراء (إن وجد)"} /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="">-- لا يوجد --</SelectItem>
                                 {purchaseOrders.map(po => <SelectItem key={po.id} value={po.order_number}>{po.order_number} - {po.supplier_name}</SelectItem>)}
@@ -758,5 +738,4 @@ const PurchasingPage = () => {
 };
 
 export default PurchasingPage;
-
     

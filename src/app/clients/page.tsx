@@ -10,12 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { PlusCircle, FileEdit, Trash2, MoreHorizontal, UserCircle, Search, Filter, Users, CalendarDays, ShoppingBag, ScrollText, PackageSearch } from 'lucide-react';
+import { PlusCircle, FileEdit, Trash2, MoreHorizontal, UserCircle, Search, Filter, Users, ShoppingBag, ScrollText, PackageSearch } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,7 +25,7 @@ interface Client {
   name: string;
   email?: string;
   phone: string;
-  total_spent?: number; // This might be calculated or manually updated
+  total_spent?: number;
   avatar?: string;
   join_date?: string;
   address?: string;
@@ -35,20 +34,19 @@ interface Client {
   credit_balance?: number;
 }
 
-interface SaleItem { // Simplified for display
-  name: string; // Product name
+interface SaleItem {
+  name: string;
   quantity: number;
-  price: number; // Unit price at time of sale
+  price: number;
 }
-interface Purchase { // Represents a Sale for a client
-  id: string; // Sale ID
-  date: string; // Sale Date
+interface Purchase {
+  id: string;
+  date: string;
   items: SaleItem[];
   total: number;
-  invoiceNumber: string; // Could be sale ID or a specific invoice number for the sale
+  invoiceNumber: string;
 }
 
-// Helper to map JS Client to Supabase snake_case
 const mapToSupabaseClient = (client: Omit<Client, 'id' | 'created_at'> & { id?: string }) => ({
   name: client.name,
   email: client.email,
@@ -58,11 +56,10 @@ const mapToSupabaseClient = (client: Omit<Client, 'id' | 'created_at'> & { id?: 
   join_date: client.join_date || new Date().toISOString().split('T')[0],
   address: client.address,
   notes: client.notes,
-  tags: client.tags,
+  tags: client.tags || [],
   credit_balance: client.credit_balance || 0,
 });
 
-// Helper to map Supabase Client to JS camelCase
 const mapFromSupabaseClient = (data: any): Client => ({
   id: data.id,
   created_at: data.created_at,
@@ -96,7 +93,7 @@ const ClientsPage = () => {
     if(!user) return;
     setIsLoadingClients(true);
     try {
-      const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('clients').select('*').order('name', { ascending: true });
       if (error) throw error;
       setClients(data.map(mapFromSupabaseClient));
     } catch (error: any) {
@@ -113,20 +110,16 @@ const ClientsPage = () => {
   const fetchClientPurchaseHistory = useCallback(async (clientId: string) => {
     if (!user) return;
     setIsLoadingClientHistory(true);
-    setClientPurchaseHistory([]); // Clear previous history
+    setClientPurchaseHistory([]);
     try {
-      // This is a simplified fetch. A real scenario would involve joining sales with sale_items and products.
-      // For now, we'll assume a 'sales' table with a client_id and a JSONB 'items' field or a related 'sale_items' table.
-      // Let's mock the structure of 'sales' and 'sale_items' for fetching.
-      // Supabase query to get sales for a client, then map to Purchase structure
       const { data: salesData, error: salesError } = await supabase
-        .from('sales') // Assuming you have a 'sales' table
+        .from('sales')
         .select(`
           id, 
           sale_date, 
           total_amount,
           sale_items ( product_id, quantity, unit_price, products (name) )
-        `) // Assuming 'sale_items' table with FK to 'sales' and 'products'
+        `)
         .eq('client_id', clientId)
         .order('sale_date', { ascending: false });
 
@@ -134,10 +127,10 @@ const ClientsPage = () => {
 
       const history: Purchase[] = salesData.map((sale: any) => ({
         id: sale.id,
-        invoiceNumber: `INV-${sale.id.substring(0, 6)}`, // Example invoice number
+        invoiceNumber: `INV-${sale.id.substring(0, 6)}`,
         date: sale.sale_date,
         items: sale.sale_items.map((item: any) => ({
-          name: item.products.name || 'منتج غير معروف',
+          name: item.products?.name || 'منتج غير معروف',
           quantity: item.quantity,
           price: item.unit_price,
         })),
@@ -148,7 +141,6 @@ const ClientsPage = () => {
     } catch (error: any) {
       console.error("Error fetching client purchase history:", error);
       toast({ title: 'خطأ في جلب سجل الشراء', description: "لم نتمكن من جلب سجل الشراء لهذا العميل. " + error.message, variant: 'destructive' });
-      // Fallback to empty or mock if Supabase fetch fails or table doesn't exist as expected
       setClientPurchaseHistory([]); 
     } finally {
         setIsLoadingClientHistory(false);
@@ -175,11 +167,12 @@ const ClientsPage = () => {
 
   const handleAddClient = () => { setEditingClient(undefined); setIsModalOpen(true); };
   const handleEditClient = (client: Client) => { setEditingClient(client); setIsModalOpen(true); };
+  
   const handleDeleteClient = async (id: string) => { 
     try {
         const { error } = await supabase.from('clients').delete().eq('id', id);
         if (error) throw error;
-        fetchClients(); // Re-fetch
+        fetchClients(); 
         if (selectedClient?.id === id) setSelectedClient(null);
         toast({ title: 'تم حذف العميل'});
     } catch (error: any) {
@@ -195,11 +188,11 @@ const ClientsPage = () => {
             if (error) throw error;
             toast({ title: 'تم تحديث العميل'});
         } else {
-            const { error } = await supabase.from('clients').insert(dataToSave);
+            const { error } = await supabase.from('clients').insert(dataToSave).select().single();
             if (error) throw error;
             toast({ title: 'تمت إضافة عميل'});
         }
-        fetchClients(); // Re-fetch
+        fetchClients(); 
         setIsModalOpen(false);
         setEditingClient(undefined);
     } catch (error: any) {
@@ -360,7 +353,7 @@ const ClientsPage = () => {
                                 </div>
                                 <ul className="text-xs list-disc list-inside pr-1 text-muted-foreground">
                                     {purchase.items.map(item => (
-                                    <li key={item.name}>{item.name} (×{item.quantity}) - {item.price.toFixed(2)} ر.س</li>
+                                    <li key={`${purchase.id}-${item.name}`}>{item.name} (×{item.quantity}) - {item.price.toFixed(2)} ر.س</li>
                                     ))}
                                 </ul>
                                 <p className="text-left text-sm font-semibold text-primary mt-1">الإجمالي: {purchase.total.toFixed(2)} ر.س</p>
@@ -394,18 +387,22 @@ const ClientsPage = () => {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              handleSaveClient({
+              const clientPayload: Omit<Client, 'id' | 'created_at'> & { id?: string } = {
                 name: formData.get('c-name') as string,
                 email: formData.get('c-email') as string || undefined,
                 phone: formData.get('c-phone') as string,
                 address: formData.get('c-address') as string || undefined,
                 notes: formData.get('c-notes') as string || undefined,
-                tags: (formData.get('c-tags') as string)?.split(',').map(t => t.trim()).filter(t => t) || undefined,
+                tags: (formData.get('c-tags') as string)?.split(',').map(t => t.trim()).filter(t => t) || [],
                 avatar: formData.get('c-avatar') as string || undefined,
                 join_date: editingClient?.join_date || new Date().toISOString().split('T')[0], 
-                total_spent: editingClient?.total_spent, // Keep existing total_spent or it will be managed server-side
+                total_spent: editingClient?.total_spent || 0,
                 credit_balance: parseFloat(formData.get('c-credit') as string) || 0,
-              });
+              };
+              if (editingClient) {
+                clientPayload.id = editingClient.id;
+              }
+              handleSaveClient(clientPayload);
             }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div><Label htmlFor="c-name">الاسم الكامل</Label><Input id="c-name" name="c-name" defaultValue={editingClient?.name} required className="mt-1 bg-input/50 focus:bg-input"/></div>
               <div><Label htmlFor="c-email">البريد الإلكتروني (اختياري)</Label><Input id="c-email" name="c-email" type="email" defaultValue={editingClient?.email} className="mt-1 bg-input/50 focus:bg-input"/></div>
@@ -437,5 +434,4 @@ const ClientsPage = () => {
 };
 
 export default ClientsPage;
-
     

@@ -2,7 +2,7 @@
 // src/app/reports/page.tsx
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,48 +12,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from "@/components/ui/calendar";
-import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon } from 'lucide-react'; // Added PieChartIcon, LineChartIcon
+import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch } from 'lucide-react';
 import { explainFinancialReport, ExplainFinancialReportInput, ExplainFinancialReportOutput } from '@/ai/flows/financial-report-assistant';
 import { useToast } from '@/hooks/use-toast';
 import { format } from "date-fns";
 import { arSA } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Pie, Cell, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line } from 'recharts';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
 
-const mockSalesSummaryData = [
-  { name: 'يناير', مبيعات: 4000, أرباح: 2400, تكاليف: 1600 },
-  { name: 'فبراير', مبيعات: 3000, أرباح: 1398, تكاليف: 1602 },
-  { name: 'مارس', مبيعات: 5000, أرباح: 3800, تكاليف: 1200 },
-  { name: 'أبريل', مبيعات: 2780, أرباح: 1908, تكاليف: 872 },
-  { name: 'مايو', مبيعات: 4500, أرباح: 2800, تكاليف: 1700 },
-  { name: 'يونيو', مبيعات: 3200, أرباح: 2000, تكاليف: 1200 },
-];
-const mockProfitLossData = [
-  { month: 'يناير', revenue: 10000, cogs: 4000, expenses: 2000, netProfit: 4000 },
-  { month: 'فبراير', revenue: 12000, cogs: 5000, expenses: 2200, netProfit: 4800 },
-  { month: 'مارس', revenue: 15000, cogs: 6000, expenses: 2500, netProfit: 6500 },
-];
-
-const mockInventoryStatusData = [
-  { name: 'فواكه', value: 400, inStock: 150, lowStock: 20 },
-  { name: 'مخبوزات', value: 300, inStock: 80, lowStock: 5 },
-  { name: 'ألبان', value: 300, inStock: 60, lowStock: 10 },
-  { name: 'لحوم', value: 200, inStock: 45, lowStock: 15 },
-];
+// Mock data will be replaced or supplemented by Supabase fetches
 const MOCK_PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
-
-const mockCustomerActivityData = [
-  { date: '2024-01-01', newCustomers: 5, activeCustomers: 50, totalOrders: 120 },
-  { date: '2024-02-01', newCustomers: 8, activeCustomers: 55, totalOrders: 150 },
-  { date: '2024-03-01', newCustomers: 12, activeCustomers: 60, totalOrders: 180 },
-];
-
-// Mock data for filters
-const mockCategories = ['فواكه', 'مخبوزات', 'ألبان وبيض', 'لحوم', 'مشروبات'];
-const mockClients = [{id: 'c1', name: 'أليس وندرلاند'}, {id: 'c2', name: 'بوب البناء'}];
-const mockSuppliers = [{id: 's1', name: 'شركة المنتجات الطازجة'}, {id: 's2', name: 'مخبوزات الخير المحدودة'}];
-
 
 const chartConfig = {
   sales: { label: "المبيعات", color: "hsl(var(--chart-1))" },
@@ -66,7 +37,13 @@ const chartConfig = {
   inventoryValue: { label: "قيمة المخزون", color: "hsl(var(--chart-1))"},
   newCustomers: { label: "عملاء جدد", color: "hsl(var(--chart-1))"},
   activeCustomers: { label: "عملاء نشطون", color: "hsl(var(--chart-2))"},
+  productCategory: {label: "فئة المنتج", color: "hsl(var(--chart-3))"}
 } satisfies React.ComponentProps<typeof ChartContainer>["config"];
+
+interface SalesSummaryData { name: string; مبيعات: number; أرباح: number; تكاليف: number; }
+interface ProfitLossData { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; }
+interface InventoryStatusData { name: string; value: number; inStock: number; lowStock: number; }
+interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; }
 
 
 const FinancialReportsPage = () => {
@@ -76,24 +53,118 @@ const FinancialReportsPage = () => {
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), 0, 1), // Start of current year
+    from: new Date(new Date().getFullYear(), 0, 1),
     to: new Date(),
   });
   const [reportType, setReportType] = useState<string>("sales_summary");
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedClient, setSelectedClient] = useState<string>("");
-  const [selectedSupplier, setSelectedSupplier] = useState<string>("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string>("");
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>("");
+  
+  const [isLoadingReportData, setIsLoadingReportData] = useState(false);
+  const [salesSummaryData, setSalesSummaryData] = useState<SalesSummaryData[]>([]);
+  const [profitLossData, setProfitLossData] = useState<ProfitLossData[]>([]);
+  const [inventoryStatusData, setInventoryStatusData] = useState<InventoryStatusData[]>([]);
+  const [customerActivityData, setCustomerActivityData] = useState<CustomerActivityData[]>([]);
+  
+  const [filterCategories, setFilterCategories] = useState<{value: string, label: string}[]>([]);
+  const [filterClients, setFilterClients] = useState<{value: string, label: string}[]>([]);
+  const [filterSuppliers, setFilterSuppliers] = useState<{value: string, label: string}[]>([]);
+
+  // Fetch data for filters
+  useEffect(() => {
+    const fetchFilterData = async () => {
+      if (!user) return;
+      try {
+        const { data: categoriesData, error: catError } = await supabase.from('products').select('category').distinct();
+        if (catError) throw catError;
+        setFilterCategories(categoriesData.map((c:any) => ({ value: c.category, label: c.category })));
+
+        const { data: clientsData, error: cliError } = await supabase.from('clients').select('id, name');
+        if (cliError) throw cliError;
+        setFilterClients(clientsData.map((c:any) => ({ value: c.id, label: c.name })));
+        
+        const { data: suppliersData, error: supError } = await supabase.from('suppliers').select('id, name');
+        if (supError) throw supError;
+        setFilterSuppliers(suppliersData.map((s:any) => ({ value: s.id, label: s.name })));
+
+      } catch (error: any) {
+        toast({ title: "خطأ في جلب بيانات التصفية", description: error.message, variant: "destructive"});
+      }
+    };
+    fetchFilterData();
+  }, [user, toast]);
+
+
+  // Fetch report data based on reportType and filters
+  const fetchReportData = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingReportData(true);
+    // TODO: Implement actual data fetching and aggregation from Supabase based on reportType and filters.
+    // This is a placeholder and will require significant logic or Supabase functions/views.
+    // For now, we'll set some basic mock data or clear existing.
+    
+    // Example: Fetch total sales (very basic)
+    if (reportType === "sales_summary") {
+      try {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('sale_date, total_amount')
+          .gte('sale_date', dateRange?.from?.toISOString() || new Date(0).toISOString())
+          .lte('sale_date', dateRange?.to?.toISOString() || new Date().toISOString());
+        if (error) throw error;
+        // This is a simplified mapping. Real aggregation is needed.
+        const monthlySales: {[key: string]: number} = {};
+        data?.forEach(sale => {
+          const month = new Date(sale.sale_date).toLocaleString('ar-EG', { month: 'short', year: 'numeric' });
+          monthlySales[month] = (monthlySales[month] || 0) + sale.total_amount;
+        });
+        setSalesSummaryData(Object.entries(monthlySales).map(([name, sales]) => ({name, مبيعات: sales, أرباح: sales * 0.4, تكاليف: sales * 0.6}))); // Mock profit/cost
+      } catch (error: any) {
+        toast({ title: `خطأ في جلب ${reportTypeLabelMap[reportType]}`, description: error.message, variant: 'destructive'});
+        setSalesSummaryData([]);
+      }
+    } else if (reportType === "inventory_status") {
+       try {
+        const { data, error } = await supabase.from('products').select('category, stock, purchase_price');
+        if (error) throw error;
+        const categoryData: {[key:string]: {value: number, inStock: number, lowStock: number}} = {};
+        data?.forEach(p => {
+            const cat = p.category || 'غير مصنف';
+            categoryData[cat] = categoryData[cat] || {value: 0, inStock: 0, lowStock: 0};
+            categoryData[cat].value += p.stock * p.purchase_price;
+            categoryData[cat].inStock += p.stock;
+            // Assume lowStock if stock < minStockLevel (minStockLevel not fetched here for simplicity)
+        });
+        setInventoryStatusData(Object.entries(categoryData).map(([name, data]) => ({name, ...data})));
+       } catch (error: any) {
+        toast({ title: `خطأ في جلب ${reportTypeLabelMap[reportType]}`, description: error.message, variant: 'destructive'});
+        setInventoryStatusData([]);
+       }
+    }
+    // Add similar fetching for profit_loss and customer_activity if simple aggregations are feasible client-side.
+    else {
+        setProfitLossData([]);
+        setCustomerActivityData([]);
+        if(reportType !== "sales_summary") setSalesSummaryData([]);
+        if(reportType !== "inventory_status") setInventoryStatusData([]);
+    }
+
+    setIsLoadingReportData(false);
+    // toast({ title: "تم تحديث بيانات التقرير (بشكل وهمي)", description: `عرض بيانات لـ ${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap]}`});
+  }, [user, reportType, dateRange, toast]);
+
+  useEffect(() => {
+    fetchReportData();
+  }, [fetchReportData]);
 
 
   const handleSubmitExplanation = async () => {
     if (!reportText.trim() || !userQuestion.trim()) {
-      toast({
-        title: "معلومات ناقصة",
-        description: "يرجى تقديم نص التقرير المالي وسؤالك.",
-        variant: "destructive",
-      });
+      toast({ title: "معلومات ناقصة", description: "يرجى تقديم نص التقرير المالي وسؤالك.", variant: "destructive" });
       return;
     }
     setIsLoadingExplanation(true);
@@ -121,16 +192,9 @@ const FinancialReportsPage = () => {
   };
   
   const handleExportReport = () => {
-    toast({
-      title: "بدء تصدير التقرير",
-      description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...`,
-    });
-    // Simulate export process
+    toast({ title: "بدء تصدير التقرير", description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...` });
     setTimeout(() => {
-      toast({
-        title: "اكتمل التصدير (وهمي)",
-        description: "تم إكمال عملية التصدير الوهمية بنجاح.",
-      });
+      toast({ title: "اكتمل التصدير (وهمي)", description: "تم إكمال عملية التصدير الوهمية بنجاح." });
     }, 2000);
   };
 
@@ -141,13 +205,15 @@ const FinancialReportsPage = () => {
     customer_activity: "نشاط العملاء"
   };
 
-
   const renderChartForReportType = () => {
+    if (isLoadingReportData) {
+      return <div className="flex justify-center items-center h-[350px]"><PackageSearch className="h-16 w-16 text-muted-foreground/30 animate-pulse" /></div>;
+    }
     switch (reportType) {
       case "sales_summary":
-        return (
+        return salesSummaryData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
-            <BarChart data={mockSalesSummaryData} layout="vertical" barCategoryGap="20%">
+            <BarChart data={salesSummaryData} layout="vertical" barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
               <XAxis type="number" axisLine={false} tickLine={false} />
               <YAxis dataKey="name" type="category" width={80} axisLine={false} tickLine={false} />
@@ -158,11 +224,12 @@ const FinancialReportsPage = () => {
               <Bar dataKey="تكاليف" fill="var(--color-costs)" radius={[0, 4, 4, 0]} name={chartConfig.costs.label} />
             </BarChart>
           </ChartContainer>
-        );
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات.</p>;
       case "profit_loss":
-        return (
+         // TODO: Replace with actual data fetching and chart for profit/loss
+        return profitLossData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
-            <LineChart data={mockProfitLossData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+            <LineChart data={profitLossData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -173,25 +240,26 @@ const FinancialReportsPage = () => {
               <Line type="monotone" dataKey="netProfit" stroke="var(--color-netProfit)" strokeWidth={3} name={chartConfig.netProfit.label}/>
             </LineChart>
           </ChartContainer>
-        );
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لتقرير الأرباح والخسائر. (قيد التطوير)</p>;
       case "inventory_status":
-        return (
+        return inventoryStatusData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <PieChart>
               <Tooltip content={<ChartTooltipContent nameKey="name" />} />
-              <Pie data={mockInventoryStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
-                 {mockInventoryStatusData.map((entry, index) => (
+              <Pie data={inventoryStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                 {inventoryStatusData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={MOCK_PIE_COLORS[index % MOCK_PIE_COLORS.length]} />
                  ))}
               </Pie>
-              <Legend content={<ChartLegendContent />} />
+              <Legend content={<ChartLegendContent nameKey="name" />} />
             </PieChart>
           </ChartContainer>
-        );
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون.</p>;
       case "customer_activity":
-         return (
+         // TODO: Replace with actual data fetching and chart for customer_activity
+         return customerActivityData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
-            <BarChart data={mockCustomerActivityData}>
+            <BarChart data={customerActivityData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" tickFormatter={(value) => new Date(value).toLocaleDateString('ar-EG', { month: 'short' })} />
               <YAxis />
@@ -201,7 +269,7 @@ const FinancialReportsPage = () => {
               <Bar dataKey="activeCustomers" fill="var(--color-activeCustomers)" name={chartConfig.activeCustomers.label} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartContainer>
-        );
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لنشاط العملاء. (قيد التطوير)</p>;
       default:
         return (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -230,7 +298,7 @@ const FinancialReportsPage = () => {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground flex items-center"><Filter className="ml-2 h-5 w-5 text-primary"/>خيارات التصفية وعرض التقرير</CardTitle>
-            <CardDescription>حدد نوع التقرير والفترة الزمنية لعرض البيانات المطلوبة. (خيارات التصفية المتقدمة قيد التطوير)</CardDescription>
+            <CardDescription>حدد نوع التقرير والفترة الزمنية لعرض البيانات المطلوبة. (التقارير المتقدمة قيد التطوير).</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
             <div>
@@ -284,30 +352,29 @@ const FinancialReportsPage = () => {
                 </PopoverContent>
               </Popover>
             </div>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground md:mt-0 mt-4 md:col-span-1 lg:col-span-1 self-end">
+            <Button onClick={fetchReportData} className="bg-primary hover:bg-primary/90 text-primary-foreground md:mt-0 mt-4 md:col-span-1 lg:col-span-1 self-end">
               تطبيق وعرض التقرير
             </Button>
-             {/* Advanced Filters Placeholders */}
             <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 border-t pt-4">
                 <div>
                   <Label htmlFor="filterCategory">تصفية حسب الفئة</Label>
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory} dir="rtl">
+                  <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter} dir="rtl">
                     <SelectTrigger id="filterCategory" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الفئات" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل الفئات</SelectItem>{mockCategories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
+                    <SelectContent><SelectItem value="">كل الفئات</SelectItem>{filterCategories.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label htmlFor="filterClient">تصفية حسب العميل</Label>
-                  <Select value={selectedClient} onValueChange={setSelectedClient} dir="rtl">
+                  <Select value={selectedClientFilter} onValueChange={setSelectedClientFilter} dir="rtl">
                     <SelectTrigger id="filterClient" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل العملاء" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل العملاء</SelectItem>{mockClients.map(client => <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>)}</SelectContent>
+                    <SelectContent><SelectItem value="">كل العملاء</SelectItem>{filterClients.map(client => <SelectItem key={client.value} value={client.value}>{client.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label htmlFor="filterSupplier">تصفية حسب المورد</Label>
-                  <Select value={selectedSupplier} onValueChange={setSelectedSupplier} dir="rtl">
+                  <Select value={selectedSupplierFilter} onValueChange={setSelectedSupplierFilter} dir="rtl">
                     <SelectTrigger id="filterSupplier" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الموردين" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل الموردين</SelectItem>{mockSuppliers.map(sup => <SelectItem key={sup.id} value={sup.id}>{sup.name}</SelectItem>)}</SelectContent>
+                    <SelectContent><SelectItem value="">كل الموردين</SelectItem>{filterSuppliers.map(sup => <SelectItem key={sup.value} value={sup.value}>{sup.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
             </div>
@@ -325,15 +392,16 @@ const FinancialReportsPage = () => {
             </CardTitle>
             <Button variant="ghost" size="icon"><Maximize className="h-5 w-5 text-muted-foreground"/></Button>
           </CardHeader>
-          <CardContent className="min-h-[350px] p-2 pr-6"> {/* Added pr-6 for YAxis labels on vertical charts */}
+          <CardContent className="min-h-[350px] p-2 pr-6">
             {renderChartForReportType()}
           </CardContent>
           <CardFooter className="text-xs text-muted-foreground border-t pt-3">
             البيانات المعروضة للفترة من {dateRange?.from ? format(dateRange.from, "PPP", {locale:arSA}) : "غير محدد"} إلى {dateRange?.to ? format(dateRange.to, "PPP", {locale:arSA}) : "غير محدد"}.
+            <br/>
+            ملاحظة: التقارير المتقدمة وتجميع البيانات المعقدة قيد التطوير ويتطلب وظائف قاعدة بيانات متخصصة.
           </CardFooter>
         </Card>
 
-        {/* AI Assistant Section */}
         <Card className="shadow-xl border-t-4 border-accent">
           <CardHeader>
             <CardTitle className="font-headline text-2xl text-foreground flex items-center">

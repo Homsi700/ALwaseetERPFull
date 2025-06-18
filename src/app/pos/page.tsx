@@ -12,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { QrCode, Search, Plus, Minus, Trash2, Scale, CreditCard, Tag, Percent, Landmark, Edit3, PackageSearch } from 'lucide-react';
+import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Tag, Percent, Landmark, Edit3, PackageSearch } from 'lucide-react';
 import type { Product as BaseProduct } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
@@ -21,9 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 
-// Define Product type specifically for POS
 interface Product extends BaseProduct {
-  pricePerUnit: number; // This will be product.salePrice
+  pricePerUnit: number;
 }
 
 interface CartItem extends Product {
@@ -49,7 +48,7 @@ const PosPage = () => {
   const [selectedDirectWeighProduct, setSelectedDirectWeighProduct] = useState<Product | null>(null);
   const [directWeightInput, setDirectWeightInput] = useState('');
 
-  const mapFromSupabaseProduct = (supabaseProduct: any): Product => {
+  const mapFromSupabaseProduct = useCallback((supabaseProduct: any): Product => {
     return {
       id: supabaseProduct.id,
       name: supabaseProduct.name,
@@ -59,14 +58,14 @@ const PosPage = () => {
       barcodeNumber: supabaseProduct.barcode_number,
       purchasePrice: supabaseProduct.purchase_price,
       salePrice: supabaseProduct.sale_price,
-      pricePerUnit: supabaseProduct.sale_price, // Use salePrice as pricePerUnit for POS
+      pricePerUnit: supabaseProduct.sale_price, 
       stock: supabaseProduct.stock,
       minStockLevel: supabaseProduct.min_stock_level,
       category: supabaseProduct.category,
       image: supabaseProduct.image_url,
       dataAiHint: supabaseProduct.data_ai_hint,
     };
-  };
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     if (!user) return;
@@ -90,7 +89,7 @@ const PosPage = () => {
     } finally {
       setIsLoadingProducts(false);
     }
-  }, [toast, user]);
+  }, [toast, user, mapFromSupabaseProduct]);
 
   useEffect(() => {
     fetchProducts();
@@ -276,41 +275,63 @@ const PosPage = () => {
         return;
     }
 
-    // Simulate saving the sale (you'll need a 'sales' and 'sale_items' table)
-    // For now, we'll just update stock
     try {
+      // 1. Create a sales record
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .insert({
+          // client_id: selectedClient?.id, // TODO: Implement client selection for sales
+          total_amount: cartTotal,
+          payment_method: 'Cash', // TODO: Implement payment method selection
+          sale_date: new Date().toISOString(),
+          user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+      if (!saleData) throw new Error("فشل في إنشاء سجل البيع.");
+
+      const saleId = saleData.id;
+
+      // 2. Create sale_items records
+      const saleItemsToInsert = cart.map(item => ({
+        sale_id: saleId,
+        product_id: item.id,
+        quantity: item.itemQuantityInCart,
+        unit_price: item.pricePerUnit,
+        total_price: item.totalItemPrice,
+      }));
+
+      const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
+      if (saleItemsError) throw saleItemsError;
+
+      // 3. Update product stock
+      // Consider using a Supabase function for atomicity of stock updates and sale creation.
       const stockUpdatePromises = cart.map(async (item) => {
-        const newStock = item.stock - item.itemQuantityInCart;
-        const { error } = await supabase
-          .from('products')
-          .update({ stock: newStock })
-          .eq('id', item.id);
-        if (error) {
-          console.error(`Error updating stock for ${item.name}:`, error);
-          throw new Error(`فشل تحديث مخزون ${item.name}.`);
+        if (!isProductWeighable(item)) { // Only update stock for non-weighable items for now
+          const newStock = item.stock - item.itemQuantityInCart;
+          const { error: stockUpdateError } = await supabase
+            .from('products')
+            .update({ stock: newStock })
+            .eq('id', item.id);
+          if (stockUpdateError) {
+            console.error(`Error updating stock for ${item.name}:`, stockUpdateError);
+            // TODO: Handle potential rollback or notification if a stock update fails
+            throw new Error(`فشل تحديث مخزون ${item.name}.`);
+          }
         }
       });
 
       await Promise.all(stockUpdatePromises);
       
-      // TODO: Create a sales record in Supabase
-      // const { error: saleError } = await supabase.from('sales').insert({
-      //    client_id: null, // Or selected client_id
-      //    total_amount: cartTotal,
-      //    payment_method: 'Cash', // Or selected payment method
-      //    sale_date: new Date().toISOString(),
-      //    user_id: user.id,
-      //    // items: cart.map(item => ({product_id: item.id, quantity: item.itemQuantityInCart, unit_price: item.pricePerUnit, total_price: item.totalItemPrice })) // This needs a separate sale_items table
-      // });
-      // if (saleError) throw saleError;
-
-      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. تم تحديث المخزون.` });
+      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. تم تحديث المخزون وتسجيل البيع.` });
       setCart([]); 
       setSelectedDirectWeighProduct(null);
       setDirectWeightInput('');
       fetchProducts(); // Re-fetch products to update stock display
     } catch (error: any) {
-      toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية تحديث المخزون.", variant: "destructive"});
+      toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع أو تحديث المخزون.", variant: "destructive"});
     }
   };
 
@@ -374,17 +395,17 @@ const PosPage = () => {
                       dir="rtl"
                     >
                       <SelectTrigger id="direct-weigh-product-select" className="mt-1 bg-input/50 focus:bg-input">
-                        <SelectValue placeholder={isLoadingProducts ? "جاري تحميل المنتجات..." : "اختر منتجًا للوزن..."} />
+                        <SelectValue placeholder={isLoadingProducts ? "جاري تحميل المنتجات..." : weighableProductsForSelect.length > 0 ? "اختر منتجًا للوزن..." : "لا توجد منتجات موزونة"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {weighableProductsForSelect.map(p => (
+                        {weighableProductsForSelect.length > 0 ? weighableProductsForSelect.map(p => (
                           <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ر.س/{p.unit})</SelectItem>
-                        ))}
+                        )) : <SelectItem value="no-weighable-products" disabled>لا توجد منتجات موزونة متاحة</SelectItem>}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="direct-weight-input">الوزن (بالكيلو)</Label>
+                    <Label htmlFor="direct-weight-input">الوزن ({selectedDirectWeighProduct?.unit || 'الوحدة'})</Label>
                     <Input
                       id="direct-weight-input"
                       type="number"
@@ -395,7 +416,7 @@ const PosPage = () => {
                       step="0.001"
                       disabled={!selectedDirectWeighProduct}
                     />
-                     <p className="text-xs text-muted-foreground mt-1">ادخل الوزن بالكيلو، مثال: 0.2 لـ 200 غرام, 1.4 لـ 1400 غرام.</p>
+                     <p className="text-xs text-muted-foreground mt-1">ادخل الوزن بـ {selectedDirectWeighProduct?.unit || 'الوحدة المختارة'}. مثال: 0.2 لـ 200 غرام (إذا كانت الوحدة كيلو).</p>
                   </div>
                   <Button
                     onClick={handleDirectAddWeighedProduct}
@@ -536,7 +557,7 @@ const PosPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="text-sm py-3"><Landmark className="ml-2 h-4 w-4"/> دفع آجل</Button>
-                <Button className="w-full text-lg py-3 bg-primary hover:bg-primary/90 text-primary-foreground col-span-2 sm:col-span-1" onClick={handleCheckout} disabled={cart.length === 0}>
+                <Button className="w-full text-lg py-3 bg-primary hover:bg-primary/90 text-primary-foreground col-span-2 sm:col-span-1" onClick={handleCheckout} disabled={cart.length === 0 || isLoadingProducts}>
                   <CreditCard className="ml-2 h-5 w-5" /> الدفع الآن
                 </Button>
             </div>
@@ -600,5 +621,4 @@ const PosPage = () => {
 };
 
 export default PosPage;
-
     
