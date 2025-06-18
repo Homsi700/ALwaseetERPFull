@@ -10,29 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building, LogIn } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabaseClient';
 
 export const LoginForm = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  // useAuth hook is still useful for accessing logout or user info elsewhere,
+  // but login itself will be a direct Supabase call.
   const { toast } = useToast();
-
-  // Simulate API call for authentication
-  const mockApiLogin = (emailInput: string, passwordInput: string): Promise<{ success: boolean; userName?: string; error?: string }> => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        if (emailInput === 'admin@alwaseet.com' && passwordInput === 'password') {
-          resolve({ success: true, userName: 'مستخدم مسؤول' });
-        } else if (emailInput === 'user@alwaseet.com' && passwordInput === 'password123') {
-          resolve({ success: true, userName: 'مستخدم عادي' });
-        }
-        else {
-          resolve({ success: false, error: 'البريد الإلكتروني أو كلمة المرور غير صالحة.' });
-        }
-      }, 1000); // Simulate network delay
-    });
-  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -46,24 +32,34 @@ export const LoginForm = () => {
     }
     setIsLoading(true);
     try {
-      const response = await mockApiLogin(email, password);
-      if (response.success && response.userName) {
-        login(email, response.userName); // AuthContext handles redirection
-        toast({
-          title: "تم تسجيل الدخول بنجاح",
-          description: `مرحباً بعودتك، ${response.userName}!`,
-        });
-      } else {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
         toast({
           title: "فشل تسجيل الدخول",
-          description: response.error || "حدث خطأ غير متوقع.",
+          description: error.message || "البريد الإلكتروني أو كلمة المرور غير صالحة.",
+          variant: "destructive",
+        });
+      } else if (data.user) {
+        toast({
+          title: "تم تسجيل الدخول بنجاح",
+          description: `مرحباً بعودتك، ${data.user.email}!`, // AuthContext will handle name display
+        });
+        // Redirection is handled by AuthContext's onAuthStateChange
+      } else {
+         toast({
+          title: "فشل تسجيل الدخول",
+          description: "حدث خطأ غير متوقع.",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
        toast({
         title: "خطأ في النظام",
-        description: "حدث خطأ أثناء محاولة تسجيل الدخول. يرجى المحاولة مرة أخرى.",
+        description: error.message || "حدث خطأ أثناء محاولة تسجيل الدخول. يرجى المحاولة مرة أخرى.",
         variant: "destructive",
       });
     } finally {
@@ -123,13 +119,8 @@ export const LoginForm = () => {
         </form>
       </Card>
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        للتجربة: <code className="font-code bg-muted px-1 py-0.5 rounded">admin@alwaseet.com</code> / <code className="font-code bg-muted px-1 py-0.5 rounded">password</code>
-      </p>
-       <p className="mt-2 text-center text-sm text-muted-foreground">
-        أو: <code className="font-code bg-muted px-1 py-0.5 rounded">user@alwaseet.com</code> / <code className="font-code bg-muted px-1 py-0.5 rounded">password123</code>
+        استخدم بيانات اعتماد Supabase الخاصة بك لتسجيل الدخول.
       </p>
     </div>
   );
 };
-
-    
