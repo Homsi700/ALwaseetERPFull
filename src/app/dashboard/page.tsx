@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, TrendingUp, Users, DollarSign, ShoppingBag, AlertTriangle, PieChart, BarChart2, FileSpreadsheet } from 'lucide-react';
-import { BarChart, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line, ResponsiveContainer } from 'recharts';
+import { BarChart, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line } from 'recharts'; // Removed ResponsiveContainer as ChartContainer handles it
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import React from 'react';
 
@@ -130,7 +130,7 @@ const DashboardPage = () => {
               <CardDescription>نظرة شهرية على اتجاهات المبيعات والأرباح.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] p-0 pr-4">
-              <ResponsiveContainer width="100%" height="100%">
+              <ChartContainer config={chartConfig} className="w-full h-full">
                 <BarChart data={salesData} layout="vertical" barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" axisLine={false} tickLine={false} />
@@ -140,7 +140,7 @@ const DashboardPage = () => {
                   <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
                   <Bar dataKey="profit" fill="var(--color-profit)" radius={[0, 4, 4, 0]} name={chartConfig.profit.label} />
                 </BarChart>
-              </ResponsiveContainer>
+              </ChartContainer>
             </CardContent>
           </Card>
 
@@ -150,7 +150,7 @@ const DashboardPage = () => {
               <CardDescription>تتبع اكتساب العملاء ومعدلات النشاط.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] p-0 pr-4">
-             <ResponsiveContainer width="100%" height="100%">
+             <ChartContainer config={chartConfig} className="w-full h-full">
                 <LineChart data={customerActivityData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
                   <XAxis type="number" axisLine={false} tickLine={false} />
@@ -160,7 +160,7 @@ const DashboardPage = () => {
                   <Line type="monotone" dataKey="new" stroke="var(--color-newCustomers)" strokeWidth={2} dot={{r: 4, fill: 'var(--color-newCustomers)'}} activeDot={{r: 6}} name={chartConfig.newCustomers.label} />
                   <Line type="monotone" dataKey="active" stroke="var(--color-activeCustomers)" strokeWidth={2} dot={{r: 4, fill: 'var(--color-activeCustomers)'}} activeDot={{r: 6}} name={chartConfig.activeCustomers.label}/>
                 </LineChart>
-              </ResponsiveContainer>
+              </ChartContainer>
             </CardContent>
           </Card>
         </div>
@@ -172,7 +172,7 @@ const DashboardPage = () => {
               <CardDescription>المنتجات الأكثر طلبًا هذا الشهر.</CardDescription>
             </CardHeader>
             <CardContent className="h-[300px] p-0">
-                <ResponsiveContainer width="100%" height="100%">
+                <ChartContainer config={chartConfig} className="w-full h-full">
                     <BarChart data={topProductsData} layout="horizontal" margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
@@ -180,7 +180,7 @@ const DashboardPage = () => {
                         <Tooltip content={<ChartTooltipContent />} cursor={{fill: 'hsl(var(--muted))'}}/>
                         <Bar dataKey="value" fill="var(--color-topProduct)" radius={[4, 4, 0, 0]} name="المبيعات" />
                     </BarChart>
-                </ResponsiveContainer>
+                </ChartContainer>
             </CardContent>
           </Card>
 
