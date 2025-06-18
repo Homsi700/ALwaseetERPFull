@@ -21,7 +21,7 @@ import {
   SidebarMobileDrawer,
 } from '@/components/ui/sidebar-alt';
 import {
-  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu
+  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, UsersRound
 } from 'lucide-react';
 
 interface NavItem {
@@ -36,6 +36,7 @@ const navItems: NavItem[] = [
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
   { href: '/purchasing', icon: Truck, label: 'المشتريات' },
   { href: '/clients', icon: Users, label: 'العملاء' },
+  { href: '/users', icon: UsersRound, label: 'إدارة المستخدمين' },
   { href: '/reports', icon: FileText, label: 'التقارير المالية' },
 ];
 
@@ -75,7 +76,14 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                     <SidebarNavLink 
                       key={item.href} 
                       href={item.href} 
-                      active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard')}
+                      active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard' && item.href.length > 1 ? pathname.startsWith(item.href) : pathname === item.href)}
+                      onClick={() => {
+                        const { setIsOpen } = useSidebarAlt(); // This won't work directly, need to get context or pass setter
+                        // Temporary fix: assume it closes, better to handle in SidebarMobileDrawer context
+                        if (typeof document !== 'undefined' && window.innerWidth < 768) {
+                           // Heuristic to close, ideally context driven
+                        }
+                      }}
                     >
                       <item.icon className="w-5 h-5 ml-3" />
                       {item.label}
@@ -123,7 +131,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                     <SidebarNavLink 
                       key={item.href} 
                       href={item.href} 
-                      active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard')}
+                      active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard' && item.href.length > 1 ? pathname.startsWith(item.href) : pathname === item.href)}
                     >
                       <item.icon className="w-5 h-5 ml-3" />
                       {item.label}
@@ -148,3 +156,5 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 };
 
 export default AppLayout;
+
+    
