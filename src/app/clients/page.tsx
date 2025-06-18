@@ -2,7 +2,7 @@
 // src/app/clients/page.tsx
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,102 +10,224 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { PlusCircle, FileEdit, Trash2, MoreHorizontal, UserCircle, Search, Filter, Users, CalendarDays, ShoppingBag, ScrollText } from 'lucide-react';
+import { PlusCircle, FileEdit, Trash2, MoreHorizontal, UserCircle, Search, Filter, Users, CalendarDays, ShoppingBag, ScrollText, PackageSearch } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area'; // Added ScrollArea
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Client {
   id: string;
+  created_at?: string;
   name: string;
-  email: string;
+  email?: string;
   phone: string;
-  totalSpent: number;
+  total_spent?: number; // This might be calculated or manually updated
   avatar?: string;
-  joinDate: string;
+  join_date?: string;
   address?: string;
   notes?: string;
   tags?: string[];
-  creditBalance?: number; // Added credit balance
+  credit_balance?: number;
 }
 
-interface Purchase {
-  id: string;
-  date: string;
-  items: { name: string; quantity: number; price: number }[];
+interface SaleItem { // Simplified for display
+  name: string; // Product name
+  quantity: number;
+  price: number; // Unit price at time of sale
+}
+interface Purchase { // Represents a Sale for a client
+  id: string; // Sale ID
+  date: string; // Sale Date
+  items: SaleItem[];
   total: number;
-  invoiceNumber: string;
+  invoiceNumber: string; // Could be sale ID or a specific invoice number for the sale
 }
 
-const initialClients: Client[] = [
-  { id: 'c1', name: 'أليس وندرلاند', email: 'alice@example.com', phone: '٠٥٥٥٠٢٠١', totalSpent: 1250.50, avatar: 'https://placehold.co/40x40.png?text=AW', joinDate: '2023-01-15', address: '123 شارع العجائب، الرياض', notes: 'عميل مميز، يفضل الدفع نقداً.', tags: ['VIP', 'نقدي'], creditBalance: 0 },
-  { id: 'c2', name: 'بوب البناء', email: 'bob@example.com', phone: '٠٥٥٥٠٢٠٢', totalSpent: 875.00, avatar: 'https://placehold.co/40x40.png?text=BB', joinDate: '2023-03-22', tags: ['دفع آجل'], creditBalance: 150.00 },
-  { id: 'c3', name: 'تشارلي براون', email: 'charlie@example.com', phone: '٠٥٥٥٠٢٠٣', totalSpent: 2400.75, joinDate: '2022-11-05', address: '789 شارع الفول السوداني، جدة', notes: 'يطلب فاتورة دائماً.', creditBalance: -50.25 }, // Negative for owes money
-];
+// Helper to map JS Client to Supabase snake_case
+const mapToSupabaseClient = (client: Omit<Client, 'id' | 'created_at'> & { id?: string }) => ({
+  name: client.name,
+  email: client.email,
+  phone: client.phone,
+  total_spent: client.total_spent || 0,
+  avatar: client.avatar,
+  join_date: client.join_date || new Date().toISOString().split('T')[0],
+  address: client.address,
+  notes: client.notes,
+  tags: client.tags,
+  credit_balance: client.credit_balance || 0,
+});
 
-const mockPurchaseHistory: { [clientId: string]: Purchase[] } = {
-  'c1': [
-    { id: 'p1', invoiceNumber: 'INV-001', date: '2024-07-01', items: [{ name: 'تفاح عضوي', quantity: 2, price: 12.50 }, { name: 'خبز قمح كامل', quantity: 1, price: 3.49 }], total: 28.49 },
-    { id: 'p2', invoiceNumber: 'INV-005', date: '2024-06-15', items: [{ name: 'حليب لوز', quantity: 3, price: 11.50 }], total: 34.50 },
-  ],
-  'c2': [
-    { id: 'p3', invoiceNumber: 'INV-008', date: '2024-07-10', items: [{ name: 'بيض بلدي (العلبة)', quantity: 2, price: 15.00 }], total: 30.00 },
-  ],
-  'c3': [
-    { id: 'p4', invoiceNumber: 'INV-010', date: '2024-05-20', items: [{ name: 'لحم بقري مفروم', quantity: 1.5, price: 70.00 }], total: 105.00 },
-    { id: 'p5', invoiceNumber: 'INV-012', date: '2024-04-10', items: [{ name: 'مياه معدنية', quantity: 10, price: 1.50 }, {name: 'تفاح عضوي', quantity: 3, price: 12.50}], total: 52.50 },
-  ],
-};
+// Helper to map Supabase Client to JS camelCase
+const mapFromSupabaseClient = (data: any): Client => ({
+  id: data.id,
+  created_at: data.created_at,
+  name: data.name,
+  email: data.email,
+  phone: data.phone,
+  total_spent: data.total_spent,
+  avatar: data.avatar,
+  join_date: data.join_date,
+  address: data.address,
+  notes: data.notes,
+  tags: data.tags || [],
+  credit_balance: data.credit_balance,
+});
+
 
 const ClientsPage = () => {
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clientPurchaseHistory, setClientPurchaseHistory] = useState<Purchase[]>([]);
+  const [isLoadingClientHistory, setIsLoadingClientHistory] = useState(false);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoadingClients, setIsLoadingClients] = useState(true);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const fetchClients = useCallback(async () => {
+    if(!user) return;
+    setIsLoadingClients(true);
+    try {
+      const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setClients(data.map(mapFromSupabaseClient));
+    } catch (error: any) {
+      toast({ title: 'خطأ في جلب العملاء', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoadingClients(false);
+    }
+  }, [toast, user]);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
+
+  const fetchClientPurchaseHistory = useCallback(async (clientId: string) => {
+    if (!user) return;
+    setIsLoadingClientHistory(true);
+    setClientPurchaseHistory([]); // Clear previous history
+    try {
+      // This is a simplified fetch. A real scenario would involve joining sales with sale_items and products.
+      // For now, we'll assume a 'sales' table with a client_id and a JSONB 'items' field or a related 'sale_items' table.
+      // Let's mock the structure of 'sales' and 'sale_items' for fetching.
+      // Supabase query to get sales for a client, then map to Purchase structure
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales') // Assuming you have a 'sales' table
+        .select(`
+          id, 
+          sale_date, 
+          total_amount,
+          sale_items ( product_id, quantity, unit_price, products (name) )
+        `) // Assuming 'sale_items' table with FK to 'sales' and 'products'
+        .eq('client_id', clientId)
+        .order('sale_date', { ascending: false });
+
+      if (salesError) throw salesError;
+
+      const history: Purchase[] = salesData.map((sale: any) => ({
+        id: sale.id,
+        invoiceNumber: `INV-${sale.id.substring(0, 6)}`, // Example invoice number
+        date: sale.sale_date,
+        items: sale.sale_items.map((item: any) => ({
+          name: item.products.name || 'منتج غير معروف',
+          quantity: item.quantity,
+          price: item.unit_price,
+        })),
+        total: sale.total_amount,
+      }));
+      setClientPurchaseHistory(history);
+
+    } catch (error: any) {
+      console.error("Error fetching client purchase history:", error);
+      toast({ title: 'خطأ في جلب سجل الشراء', description: "لم نتمكن من جلب سجل الشراء لهذا العميل. " + error.message, variant: 'destructive' });
+      // Fallback to empty or mock if Supabase fetch fails or table doesn't exist as expected
+      setClientPurchaseHistory([]); 
+    } finally {
+        setIsLoadingClientHistory(false);
+    }
+  }, [toast, user]);
+
+  useEffect(() => {
+    if (selectedClient) {
+        fetchClientPurchaseHistory(selectedClient.id);
+    } else {
+        setClientPurchaseHistory([]);
+    }
+  }, [selectedClient, fetchClientPurchaseHistory]);
+
 
   const filteredClients = useMemo(() => 
     clients.filter(client => 
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       client.phone.includes(searchTerm)
-    ).sort((a,b) => new Date(b.joinDate).getTime() - new Date(a.joinDate).getTime()), // Sort by most recent join date
+    ).sort((a,b) => new Date(b.join_date || 0).getTime() - new Date(a.join_date || 0).getTime()),
     [clients, searchTerm]
   );
 
   const handleAddClient = () => { setEditingClient(undefined); setIsModalOpen(true); };
   const handleEditClient = (client: Client) => { setEditingClient(client); setIsModalOpen(true); };
-  const handleDeleteClient = (id: string) => { 
-    setClients(clients.filter(c => c.id !== id));
-    if (selectedClient?.id === id) setSelectedClient(null);
-    toast({ title: 'تم حذف العميل', description: 'تمت إزالة العميل بنجاح.' });
-  };
-
-  const handleSaveClient = (clientData: Omit<Client, 'id' | 'totalSpent' | 'joinDate'> & { totalSpent?: number, joinDate?: string }) => {
-    if (editingClient) {
-      setClients(clients.map(c => c.id === editingClient.id ? { ...editingClient, ...clientData, creditBalance: clientData.creditBalance ?? editingClient.creditBalance } : c));
-      toast({ title: 'تم تحديث العميل', description: `تم تحديث بيانات ${clientData.name}.` });
-    } else {
-      const newClient: Client = { 
-        ...clientData, 
-        id: String(Date.now()), 
-        totalSpent: clientData.totalSpent || 0, 
-        joinDate: clientData.joinDate || new Date().toISOString().split('T')[0],
-        avatar: clientData.avatar || `https://placehold.co/40x40.png?text=${encodeURIComponent(clientData.name.substring(0,1))}`,
-        creditBalance: clientData.creditBalance || 0,
-      };
-      setClients([newClient, ...clients]);
-      toast({ title: 'تمت إضافة عميل', description: `تمت إضافة ${clientData.name} بنجاح.` });
+  const handleDeleteClient = async (id: string) => { 
+    try {
+        const { error } = await supabase.from('clients').delete().eq('id', id);
+        if (error) throw error;
+        fetchClients(); // Re-fetch
+        if (selectedClient?.id === id) setSelectedClient(null);
+        toast({ title: 'تم حذف العميل'});
+    } catch (error: any) {
+        toast({ title: 'خطأ في حذف العميل', description: error.message, variant: 'destructive'});
     }
-    setIsModalOpen(false);
-    setEditingClient(undefined);
   };
 
-  const clientPurchaseHistory = selectedClient ? mockPurchaseHistory[selectedClient.id] || [] : [];
+  const handleSaveClient = async (clientData: Omit<Client, 'id' | 'created_at'> & { id?: string }) => {
+    const dataToSave = mapToSupabaseClient(clientData);
+    try {
+        if (editingClient) {
+            const { error } = await supabase.from('clients').update(dataToSave).eq('id', editingClient.id);
+            if (error) throw error;
+            toast({ title: 'تم تحديث العميل'});
+        } else {
+            const { error } = await supabase.from('clients').insert(dataToSave);
+            if (error) throw error;
+            toast({ title: 'تمت إضافة عميل'});
+        }
+        fetchClients(); // Re-fetch
+        setIsModalOpen(false);
+        setEditingClient(undefined);
+    } catch (error: any) {
+        toast({ title: 'خطأ في حفظ العميل', description: error.message, variant: 'destructive'});
+    }
+  };
+
+
+  if (isLoadingClients && !user) { 
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      </AppLayout>
+    );
+  }
+  
+  if (!user && !isLoadingClients) { 
+     return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center h-64 text-center">
+          <p className="text-lg text-muted-foreground mb-4">يرجى تسجيل الدخول للوصول إلى قسم العملاء.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
 
   return (
     <AppLayout>
@@ -150,24 +272,25 @@ const ClientsPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClients.length > 0 ? filteredClients.map(client => (
+                  {isLoadingClients ? (
+                     <TableRow><TableCell colSpan={7} className="text-center h-24"><PackageSearch className="h-12 w-12 mx-auto text-muted-foreground/30 animate-pulse" /></TableCell></TableRow>
+                  ) : filteredClients.length > 0 ? filteredClients.map(client => (
                     <TableRow key={client.id} onClick={() => setSelectedClient(client)} className={`cursor-pointer hover:bg-muted/50 transition-colors ${selectedClient?.id === client.id ? 'bg-primary/10' : ''}`}>
                       <TableCell>
                         <Avatar className="h-9 w-9">
-                          <AvatarImage src={client.avatar} alt={client.name} data-ai-hint="person portrait" />
+                          <AvatarImage src={client.avatar || `https://placehold.co/40x40.png?text=${encodeURIComponent(client.name.charAt(0))}`} alt={client.name} data-ai-hint="person portrait" />
                           <AvatarFallback>{client.name.split(' ').map(n=>n[0]).join('').toUpperCase()}</AvatarFallback>
                         </Avatar>
                       </TableCell>
                       <TableCell className="font-medium text-foreground">{client.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm"><div>{client.email}</div><div>{client.phone}</div></TableCell>
-                      <TableCell className="text-left text-muted-foreground">{client.totalSpent.toFixed(2)} ر.س</TableCell>
-                      <TableCell className={`text-left font-medium ${client.creditBalance && client.creditBalance > 0 ? 'text-green-600' : client.creditBalance && client.creditBalance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                        {client.creditBalance ? client.creditBalance.toFixed(2) : '0.00'} ر.س
+                      <TableCell className="text-muted-foreground text-sm"><div>{client.email || '-'}</div><div>{client.phone}</div></TableCell>
+                      <TableCell className="text-left text-muted-foreground">{(client.total_spent || 0).toFixed(2)} ر.س</TableCell>
+                      <TableCell className={`text-left font-medium ${client.credit_balance && client.credit_balance > 0 ? 'text-green-600' : client.credit_balance && client.credit_balance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                        {client.credit_balance ? client.credit_balance.toFixed(2) : '0.00'} ر.س
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{new Date(client.joinDate).toLocaleDateString('ar-EG')}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{client.join_date ? new Date(client.join_date).toLocaleDateString('ar-EG') : '-'}</TableCell>
                       <TableCell className="text-left">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="start">
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSelectedClient(client);}}><ScrollText className="ml-2 h-4 w-4" />عرض التفاصيل</DropdownMenuItem>
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditClient(client);}}><FileEdit className="ml-2 h-4 w-4" />تعديل</DropdownMenuItem>
@@ -177,13 +300,15 @@ const ClientsPage = () => {
                       </TableCell>
                     </TableRow>
                   )) : (
-                    <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">لا يوجد عملاء يطابقون البحث أو لم يتم إضافة عملاء بعد.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                        {clients.length === 0 ? "لا يوجد عملاء مضافون بعد." : "لا يوجد عملاء يطابقون البحث."}
+                    </TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
               </div>
             </CardContent>
-             {filteredClients.length === 0 && clients.length > 0 && <CardFooter className="justify-center p-4 text-muted-foreground">لا يوجد عملاء يطابقون البحث.</CardFooter>}
+             {filteredClients.length === 0 && clients.length > 0 && !isLoadingClients && <CardFooter className="justify-center p-4 text-muted-foreground">لا يوجد عملاء يطابقون البحث.</CardFooter>}
           </Card>
 
           {selectedClient && (
@@ -192,13 +317,13 @@ const ClientsPage = () => {
               <div>
                 <CardTitle className="font-headline text-2xl text-foreground flex items-center">
                     <Avatar className="h-12 w-12 ml-4">
-                        <AvatarImage src={selectedClient.avatar} alt={selectedClient.name} data-ai-hint="person portrait" />
+                        <AvatarImage src={selectedClient.avatar || `https://placehold.co/48x48.png?text=${encodeURIComponent(selectedClient.name.charAt(0))}`} alt={selectedClient.name} data-ai-hint="person portrait" />
                         <AvatarFallback className="text-xl">{selectedClient.name.split(' ').map(n=>n[0]).join('').toUpperCase()}</AvatarFallback>
                     </Avatar>
                     {selectedClient.name}
                 </CardTitle>
                 <CardDescription className="mt-1">
-                    {selectedClient.email} &bull; {selectedClient.phone}
+                    {selectedClient.email || ''} {selectedClient.email && selectedClient.phone ? <> &bull; </> : ''} {selectedClient.phone}
                      {selectedClient.address && ` &bull; ${selectedClient.address}`}
                 </CardDescription>
                 {selectedClient.tags && selectedClient.tags.length > 0 && (
@@ -214,15 +339,17 @@ const ClientsPage = () => {
                     <div>
                         <h4 className="font-semibold text-muted-foreground mb-2">معلومات العميل</h4>
                         <div className="text-sm space-y-1">
-                            <p><strong className="text-muted-foreground/80">تاريخ الانضمام:</strong> {new Date(selectedClient.joinDate).toLocaleDateString('ar-EG')}</p>
-                            <p><strong className="text-muted-foreground/80">إجمالي المنفق:</strong> <span className="font-semibold text-primary">{selectedClient.totalSpent.toFixed(2)} ر.س</span></p>
-                            <p><strong className="text-muted-foreground/80">الرصيد الآجل:</strong> <span className={`font-semibold ${selectedClient.creditBalance && selectedClient.creditBalance > 0 ? 'text-green-600' : selectedClient.creditBalance && selectedClient.creditBalance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{selectedClient.creditBalance ? selectedClient.creditBalance.toFixed(2) : '0.00'} ر.س</span></p>
+                            <p><strong className="text-muted-foreground/80">تاريخ الانضمام:</strong> {selectedClient.join_date ? new Date(selectedClient.join_date).toLocaleDateString('ar-EG') : '-'}</p>
+                            <p><strong className="text-muted-foreground/80">إجمالي المنفق:</strong> <span className="font-semibold text-primary">{(selectedClient.total_spent || 0).toFixed(2)} ر.س</span></p>
+                            <p><strong className="text-muted-foreground/80">الرصيد الآجل:</strong> <span className={`font-semibold ${selectedClient.credit_balance && selectedClient.credit_balance > 0 ? 'text-green-600' : selectedClient.credit_balance && selectedClient.credit_balance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{(selectedClient.credit_balance || 0).toFixed(2)} ر.س</span></p>
                             {selectedClient.notes && <p><strong className="text-muted-foreground/80">ملاحظات:</strong> {selectedClient.notes}</p>}
                         </div>
                     </div>
                     <div>
                         <h4 className="font-semibold text-muted-foreground mb-2 flex items-center"><ShoppingBag className="ml-2 h-4 w-4 text-primary"/>سجل الشراء الأخير</h4>
-                        {clientPurchaseHistory.length > 0 ? (
+                        {isLoadingClientHistory ? (
+                             <div className="flex justify-center items-center h-32"><PackageSearch className="h-10 w-10 text-muted-foreground/30 animate-pulse" /></div>
+                        ) : clientPurchaseHistory.length > 0 ? (
                             <ScrollArea className="h-48 pr-2">
                             <ul className="space-y-3">
                             {clientPurchaseHistory.map(purchase => (
@@ -253,7 +380,7 @@ const ClientsPage = () => {
           </Card>
           )}
 
-          {!selectedClient && clients.length > 0 && (
+          {!selectedClient && clients.length > 0 && !isLoadingClients && (
              <div className="flex flex-col items-center justify-center text-center py-10">
                 <UserCircle className="w-20 h-20 text-muted-foreground/30 mb-4" />
                 <p className="text-lg text-muted-foreground">اختر عميلًا من القائمة أعلاه لعرض تفاصيله وسجل شرائه.</p>
@@ -261,7 +388,6 @@ const ClientsPage = () => {
             </div>
           )}
         
-
         <Dialog open={isModalOpen} onOpenChange={(isOpen) => { setIsModalOpen(isOpen); if(!isOpen) setEditingClient(undefined);}}>
           <DialogContent className="sm:max-w-lg bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingClient ? 'تعديل بيانات العميل' : 'إضافة عميل جديد'}</DialogTitle></DialogHeader>
@@ -270,22 +396,22 @@ const ClientsPage = () => {
               const formData = new FormData(e.currentTarget);
               handleSaveClient({
                 name: formData.get('c-name') as string,
-                email: formData.get('c-email') as string,
+                email: formData.get('c-email') as string || undefined,
                 phone: formData.get('c-phone') as string,
                 address: formData.get('c-address') as string || undefined,
                 notes: formData.get('c-notes') as string || undefined,
                 tags: (formData.get('c-tags') as string)?.split(',').map(t => t.trim()).filter(t => t) || undefined,
                 avatar: formData.get('c-avatar') as string || undefined,
-                joinDate: editingClient?.joinDate, 
-                totalSpent: editingClient?.totalSpent,
-                creditBalance: parseFloat(formData.get('c-credit') as string) || 0,
+                join_date: editingClient?.join_date || new Date().toISOString().split('T')[0], 
+                total_spent: editingClient?.total_spent, // Keep existing total_spent or it will be managed server-side
+                credit_balance: parseFloat(formData.get('c-credit') as string) || 0,
               });
             }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div><Label htmlFor="c-name">الاسم الكامل</Label><Input id="c-name" name="c-name" defaultValue={editingClient?.name} required className="mt-1 bg-input/50 focus:bg-input"/></div>
-              <div><Label htmlFor="c-email">البريد الإلكتروني</Label><Input id="c-email" name="c-email" type="email" defaultValue={editingClient?.email} className="mt-1 bg-input/50 focus:bg-input"/></div>
+              <div><Label htmlFor="c-email">البريد الإلكتروني (اختياري)</Label><Input id="c-email" name="c-email" type="email" defaultValue={editingClient?.email} className="mt-1 bg-input/50 focus:bg-input"/></div>
               <div><Label htmlFor="c-phone">رقم الهاتف</Label><Input id="c-phone" name="c-phone" type="tel" defaultValue={editingClient?.phone} required className="mt-1 bg-input/50 focus:bg-input"/></div>
               <div><Label htmlFor="c-address">العنوان (اختياري)</Label><Input id="c-address" name="c-address" defaultValue={editingClient?.address} className="mt-1 bg-input/50 focus:bg-input"/></div>
-              <div><Label htmlFor="c-credit">الرصيد الآجل (اختياري)</Label><Input id="c-credit" name="c-credit" type="number" step="0.01" defaultValue={editingClient?.creditBalance?.toString() || "0"} className="mt-1 bg-input/50 focus:bg-input" placeholder="0.00"/></div>
+              <div><Label htmlFor="c-credit">الرصيد الآجل (اختياري)</Label><Input id="c-credit" name="c-credit" type="number" step="0.01" defaultValue={editingClient?.credit_balance?.toString() || "0"} className="mt-1 bg-input/50 focus:bg-input" placeholder="0.00"/></div>
               <div><Label htmlFor="c-notes">ملاحظات (اختياري)</Label><Input id="c-notes" name="c-notes" defaultValue={editingClient?.notes} className="mt-1 bg-input/50 focus:bg-input"/></div>
               <div><Label htmlFor="c-tags">الوسوم (اختياري, مفصولة بفاصلة)</Label><Input id="c-tags" name="c-tags" defaultValue={editingClient?.tags?.join(', ')} className="mt-1 bg-input/50 focus:bg-input" placeholder="VIP, دفع آجل..."/></div>
               <div><Label htmlFor="c-avatar">رابط الصورة الرمزية (اختياري)</Label><Input id="c-avatar" name="c-avatar" defaultValue={editingClient?.avatar} className="mt-1 bg-input/50 focus:bg-input" placeholder="https://placehold.co/40x40.png"/></div>
@@ -311,4 +437,5 @@ const ClientsPage = () => {
 };
 
 export default ClientsPage;
+
     

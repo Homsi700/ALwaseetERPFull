@@ -12,66 +12,106 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { QrCode, Search, Plus, Minus, Trash2, Scale, CreditCard, Tag, Percent, Landmark, Edit3 } from 'lucide-react';
+import { QrCode, Search, Plus, Minus, Trash2, Scale, CreditCard, Tag, Percent, Landmark, Edit3, PackageSearch } from 'lucide-react';
 import type { Product as BaseProduct } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
 
-// Define Product type specifically for POS, clarifying price is per unit
-interface Product extends Omit<BaseProduct, 'price'> {
-  pricePerUnit: number; // Price per piece, or price per KG/Gram for weighable
+// Define Product type specifically for POS
+interface Product extends BaseProduct {
+  pricePerUnit: number; // This will be product.salePrice
 }
 
 interface CartItem extends Product {
-  itemQuantityInCart: number; // For regular items: count. For weighed items: the weight (e.g., 0.250 for 250g)
-  totalItemPrice: number; // Calculated price for this line item (product.pricePerUnit * itemQuantityInCart)
+  itemQuantityInCart: number; 
+  totalItemPrice: number; 
   isWeighed: boolean;
 }
-
-const initialAvailableProducts: Product[] = [
-  { id: '1', name: 'تفاح عضوي', category: 'فواكه', pricePerUnit: 12.50, stock: 150, unit: 'كيلو', image: 'https://placehold.co/40x40.png?text=ت', dataAiHint: 'apple fruit' },
-  { id: '2', name: 'خبز قمح كامل', category: 'مخبوزات', pricePerUnit: 3.49, stock: 80, unit: 'قطعة', image: 'https://placehold.co/40x40.png?text=خ', dataAiHint: 'bread pastry' },
-  { id: '3', name: 'بيض بلدي (العلبة)', category: 'ألبان وبيض', pricePerUnit: 15.00, stock: 60, unit: 'علبة', image: 'https://placehold.co/40x40.png?text=ب', dataAiHint: 'eggs dairy' },
-  { id: '4', name: 'موز', category: 'فواكه', pricePerUnit: 5.75, stock: 200, unit: 'كيلو', image: 'https://placehold.co/40x40.png?text=م', dataAiHint: 'banana fruit' },
-  { id: '5', name: 'صدر دجاج', category: 'لحوم', pricePerUnit: 28.00, stock: 50, unit: 'كيلو', image: 'https://placehold.co/40x40.png?text=د', dataAiHint: 'chicken meat' },
-  { id: '6', name: 'خيار', category: 'خضروات', pricePerUnit: 7.00, stock: 0, unit: 'كيلو', image: 'https://placehold.co/40x40.png?text=خ', dataAiHint: 'cucumber vegetable' },
-  { id: '7', name: 'طماطم', category: 'خضروات', pricePerUnit: 6.50, stock: 120, unit: 'كيلو', image: 'https://placehold.co/40x40.png?text=ط', dataAiHint: 'tomato vegetable' },
-  { id: '8', name: 'مياه معدنية (قارورة)', category: 'مشروبات', pricePerUnit: 1.50, stock: 300, unit: 'قطعة', image: 'https://placehold.co/40x40.png?text=م', dataAiHint: 'water bottle' },
-];
-
 
 const PosPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
 
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [productToWeigh, setProductToWeigh] = useState<Product | null>(null);
-  const [weightInputValue, setWeightInputValue] = useState(''); // For modal
+  const [weightInputValue, setWeightInputValue] = useState('');
   const [calculatedPriceForWeight, setCalculatedPriceForWeight] = useState(0);
 
-  // New state for direct weighable product entry
   const [selectedDirectWeighProduct, setSelectedDirectWeighProduct] = useState<Product | null>(null);
   const [directWeightInput, setDirectWeightInput] = useState('');
 
+  const mapFromSupabaseProduct = (supabaseProduct: any): Product => {
+    return {
+      id: supabaseProduct.id,
+      name: supabaseProduct.name,
+      description: supabaseProduct.description,
+      unit: supabaseProduct.unit,
+      productType: supabaseProduct.product_type,
+      barcodeNumber: supabaseProduct.barcode_number,
+      purchasePrice: supabaseProduct.purchase_price,
+      salePrice: supabaseProduct.sale_price,
+      pricePerUnit: supabaseProduct.sale_price, // Use salePrice as pricePerUnit for POS
+      stock: supabaseProduct.stock,
+      minStockLevel: supabaseProduct.min_stock_level,
+      category: supabaseProduct.category,
+      image: supabaseProduct.image_url,
+      dataAiHint: supabaseProduct.data_ai_hint,
+    };
+  };
+
+  const fetchProducts = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingProducts(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        setAvailableProducts(data.map(mapFromSupabaseProduct));
+      }
+    } catch (error: any) {
+      toast({
+        title: 'خطأ في جلب المنتجات',
+        description: error.message || 'فشل الاتصال بالخادم.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [toast, user]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const isProductWeighable = (product: Product): boolean => {
-    return product.unit.toLowerCase() === 'كيلو' || product.unit.toLowerCase() === 'غرام';
+    const unit = product.unit?.toLowerCase();
+    return unit === 'كيلو' || unit === 'غرام';
   };
 
   const weighableProductsForSelect = useMemo(() => 
-    initialAvailableProducts.filter(p => isProductWeighable(p)),
-    []
+    availableProducts.filter(p => isProductWeighable(p)),
+    [availableProducts]
   );
 
-  const filteredProducts = useMemo(() => 
-    initialAvailableProducts.filter(p => 
+  const filteredProductsForQuickAdd = useMemo(() => 
+    availableProducts.filter(p => 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
       (!isProductWeighable(p) || !cart.find(item => item.id === p.id && item.isWeighed)) 
     ),
-    [searchTerm, cart] 
+    [searchTerm, cart, availableProducts] 
   );
 
   const handleProductSelection = useCallback((product: Product) => {
@@ -129,7 +169,7 @@ const PosPage = () => {
     }
   }, [productToWeigh, weightInputValue]);
 
-  const handleAddOrUpdateWeighedProduct = () => { // This is for the MODAL flow
+  const handleAddOrUpdateWeighedProduct = () => {
     if (!productToWeigh || !weightInputValue) return;
     const weight = parseFloat(weightInputValue);
 
@@ -226,28 +266,84 @@ const PosPage = () => {
     [cart]
   );
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) {
       toast({ title: "سلة فارغة", description: "يرجى إضافة منتجات إلى السلة قبل الدفع.", variant: "destructive"});
       return;
     }
-    toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. شكراً لك!` });
-    setCart([]); 
-    setSelectedDirectWeighProduct(null);
-    setDirectWeightInput('');
+    if (!user) {
+        toast({ title: "خطأ", description: "يجب تسجيل الدخول لإتمام العملية.", variant: "destructive"});
+        return;
+    }
+
+    // Simulate saving the sale (you'll need a 'sales' and 'sale_items' table)
+    // For now, we'll just update stock
+    try {
+      const stockUpdatePromises = cart.map(async (item) => {
+        const newStock = item.stock - item.itemQuantityInCart;
+        const { error } = await supabase
+          .from('products')
+          .update({ stock: newStock })
+          .eq('id', item.id);
+        if (error) {
+          console.error(`Error updating stock for ${item.name}:`, error);
+          throw new Error(`فشل تحديث مخزون ${item.name}.`);
+        }
+      });
+
+      await Promise.all(stockUpdatePromises);
+      
+      // TODO: Create a sales record in Supabase
+      // const { error: saleError } = await supabase.from('sales').insert({
+      //    client_id: null, // Or selected client_id
+      //    total_amount: cartTotal,
+      //    payment_method: 'Cash', // Or selected payment method
+      //    sale_date: new Date().toISOString(),
+      //    user_id: user.id,
+      //    // items: cart.map(item => ({product_id: item.id, quantity: item.itemQuantityInCart, unit_price: item.pricePerUnit, total_price: item.totalItemPrice })) // This needs a separate sale_items table
+      // });
+      // if (saleError) throw saleError;
+
+      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. تم تحديث المخزون.` });
+      setCart([]); 
+      setSelectedDirectWeighProduct(null);
+      setDirectWeightInput('');
+      fetchProducts(); // Re-fetch products to update stock display
+    } catch (error: any) {
+      toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية تحديث المخزون.", variant: "destructive"});
+    }
   };
+
+  if (isLoadingProducts && !user) { 
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      </AppLayout>
+    );
+  }
+  
+  if (!user && !isLoadingProducts) { 
+     return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center h-64 text-center">
+          <p className="text-lg text-muted-foreground mb-4">يرجى تسجيل الدخول للوصول إلى نقطة البيع.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
 
   return (
     <AppLayout>
       <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)] max-h-[calc(100vh-8rem)]">
-        {/* Left Panel: Product Search & Quick Add */}
         <div className="lg:w-2/5 flex flex-col gap-4">
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="font-headline text-xl text-foreground">بحث وإضافة منتجات</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              {/* Existing Search Row */}
               <div className="flex gap-2">
                 <div className="relative flex-grow">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -263,10 +359,7 @@ const PosPage = () => {
                   <QrCode className="h-5 w-5" />
                 </Button>
               </div>
-
               <Separator /> 
-              
-              {/* New Direct Weighable Product Section */}
               <div>
                 <h3 className="text-md font-semibold mb-2 text-muted-foreground">إضافة سريعة لمنتج بالوزن:</h3>
                 <div className="space-y-3">
@@ -275,13 +368,13 @@ const PosPage = () => {
                     <Select
                       value={selectedDirectWeighProduct?.id || ""}
                       onValueChange={(productId) => {
-                        const product = initialAvailableProducts.find(p => p.id === productId);
+                        const product = availableProducts.find(p => p.id === productId);
                         setSelectedDirectWeighProduct(product || null);
                       }}
                       dir="rtl"
                     >
                       <SelectTrigger id="direct-weigh-product-select" className="mt-1 bg-input/50 focus:bg-input">
-                        <SelectValue placeholder="اختر منتجًا للوزن..." />
+                        <SelectValue placeholder={isLoadingProducts ? "جاري تحميل المنتجات..." : "اختر منتجًا للوزن..."} />
                       </SelectTrigger>
                       <SelectContent>
                         {weighableProductsForSelect.map(p => (
@@ -322,9 +415,13 @@ const PosPage = () => {
             </CardHeader>
             <CardContent className="flex-1 p-3 overflow-hidden">
               <ScrollArea className="h-full pr-3">
-                {filteredProducts.length > 0 ? (
+                {isLoadingProducts ? (
+                    <div className="flex justify-center items-center h-full">
+                        <PackageSearch className="h-16 w-16 text-muted-foreground/30 animate-pulse" />
+                    </div>
+                ) : filteredProductsForQuickAdd.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {filteredProducts.slice(0, 12).map(product => (
+                    {filteredProductsForQuickAdd.slice(0, 12).map(product => (
                       <Button 
                         key={product.id} 
                         variant="outline" 
@@ -335,7 +432,7 @@ const PosPage = () => {
                         {product.stock === 0 && !isProductWeighable(product) && (
                             <Badge variant="destructive" className="absolute top-1 right-1 text-xs px-1 py-0.5">نفذ</Badge>
                         )}
-                        <Image src={product.image!} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint={product.dataAiHint || "item product"} />
+                        <Image src={product.image || `https://placehold.co/40x40.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint={product.dataAiHint || "item product"} />
                         <span className="text-xs leading-tight">{product.name}</span>
                         <span className="text-xs font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ر.س/{product.unit}</span>
                       </Button>
@@ -349,7 +446,6 @@ const PosPage = () => {
           </Card>
         </div>
 
-        {/* Right Panel: Current Sale & Checkout */}
         <Card className="lg:w-3/5 shadow-lg flex flex-col h-full">
           <CardHeader className="flex-shrink-0">
             <CardTitle className="font-headline text-2xl text-foreground">البيع الحالي</CardTitle>
@@ -375,7 +471,7 @@ const PosPage = () => {
                       <TableRow key={`${item.id}-${item.isWeighed}`}>
                         <TableCell>
                           <div className="flex items-center">
-                            <Image src={item.image!} alt={item.name} width={32} height={32} className="ml-3 rounded object-cover" data-ai-hint={item.dataAiHint || "item product"}/>
+                            <Image src={item.image || `https://placehold.co/32x32.png?text=${encodeURIComponent(item.name.charAt(0))}`} alt={item.name} width={32} height={32} className="ml-3 rounded object-cover" data-ai-hint={item.dataAiHint || "item product"}/>
                             <div>
                               <p className="font-medium text-foreground">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{item.pricePerUnit.toFixed(2)} ر.س لل{item.unit}</p>
@@ -440,7 +536,7 @@ const PosPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="text-sm py-3"><Landmark className="ml-2 h-4 w-4"/> دفع آجل</Button>
-                <Button className="w-full text-lg py-3 bg-primary hover:bg-primary/90 text-primary-foreground col-span-2 sm:col-span-1" onClick={handleCheckout}>
+                <Button className="w-full text-lg py-3 bg-primary hover:bg-primary/90 text-primary-foreground col-span-2 sm:col-span-1" onClick={handleCheckout} disabled={cart.length === 0}>
                   <CreditCard className="ml-2 h-5 w-5" /> الدفع الآن
                 </Button>
             </div>
@@ -449,7 +545,6 @@ const PosPage = () => {
         </Card>
       </div>
 
-      {/* Weight Input Modal (for quick add selection) */}
       <Dialog open={isWeightModalOpen} onOpenChange={(isOpen) => {
         if (!isOpen) {
             setProductToWeigh(null);
@@ -464,7 +559,7 @@ const PosPage = () => {
             {productToWeigh && (
                 <div className="space-y-4 py-3">
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md">
-                        <Image src={productToWeigh.image!} alt={productToWeigh.name} width={40} height={40} className="rounded" data-ai-hint={productToWeigh.dataAiHint || "item product"}/>
+                        <Image src={productToWeigh.image || `https://placehold.co/40x40.png?text=${encodeURIComponent(productToWeigh.name.charAt(0))}`} alt={productToWeigh.name} width={40} height={40} className="rounded" data-ai-hint={productToWeigh.dataAiHint || "item product"}/>
                         <div>
                             <p className="font-medium text-lg">{productToWeigh.name}</p>
                             <p className="text-sm text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ر.س / {productToWeigh.unit}</p>
@@ -500,7 +595,6 @@ const PosPage = () => {
             </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </AppLayout>
   );
 };
