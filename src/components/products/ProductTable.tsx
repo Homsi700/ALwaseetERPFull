@@ -1,3 +1,4 @@
+
 // src/components/products/ProductTable.tsx
 "use client";
 
@@ -6,7 +7,7 @@ import Image from 'next/image';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, FileEdit, Trash2, Search, Filter } from 'lucide-react';
+import { MoreHorizontal, FileEdit, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,12 +45,14 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
   const [filterCategory, setFilterCategory] = useState('');
   const [filterProductType, setFilterProductType] = useState('');
 
+  const ALL_FILTER_VALUE = "all"; // Using a constant for clarity
+
   const filteredProducts = products.filter(product => {
-    return (
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (filterCategory === '' || product.category === filterCategory) &&
-      (filterProductType === '' || product.productType === filterProductType)
-    );
+    const categoryMatch = filterCategory === '' || filterCategory === ALL_FILTER_VALUE || product.category === filterCategory;
+    const productTypeMatch = filterProductType === '' || filterProductType === ALL_FILTER_VALUE || product.productType === filterProductType;
+    const searchTermMatch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return searchTermMatch && categoryMatch && productTypeMatch;
   });
 
   return (
@@ -68,7 +71,7 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
               <SelectValue placeholder="تصفية حسب الفئة" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">كل الفئات</SelectItem>
+              <SelectItem value={ALL_FILTER_VALUE}>كل الفئات</SelectItem>
               {productCategories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -77,7 +80,7 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
               <SelectValue placeholder="تصفية حسب نوع المنتج" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">كل الأنواع</SelectItem>
+              <SelectItem value={ALL_FILTER_VALUE}>كل الأنواع</SelectItem>
               {productTypes.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -169,3 +172,4 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
 };
 
 export default ProductTable;
+
