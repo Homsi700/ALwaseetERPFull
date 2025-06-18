@@ -1,4 +1,3 @@
-
 // src/app/products/page.tsx
 "use client";
 
@@ -6,21 +5,36 @@ import React, { useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
-import ProductTable, { Product } from '@/components/products/ProductTable';
+import ProductTable, { Product } from '@/components/products/ProductTable'; // Product type is now imported
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { useToast } from '@/hooks/use-toast';
 
 const initialProducts: Product[] = [
-  { id: '1', name: 'تفاح عضوي', category: 'فواكه', price: 2.99, stock: 150, unit: 'كيلو', image: 'https://placehold.co/100x100.png?text=تفاح' , dataAiHint: 'apple fruit' },
-  { id: '2', name: 'خبز قمح كامل', category: 'مخبوزات', price: 3.49, stock: 80, unit: 'قطعة', image: 'https://placehold.co/100x100.png?text=خبز', dataAiHint: 'bread pastry' },
-  { id: '3', name: 'بيض (طبق)', category: 'ألبان وبيض', price: 4.99, stock: 60, unit: 'علبة', image: 'https://placehold.co/100x100.png?text=بيض', dataAiHint: 'eggs dairy' },
-  { id: '4', name: 'حليب لوز (١ لتر)', category: 'مشروبات', price: 2.79, stock: 120, unit: 'لتر', image: 'https://placehold.co/100x100.png?text=حليب', dataAiHint: 'milk drink' },
-  { id: '5', name: 'لحم بقري مفروم', category: 'لحوم', price: 7.99, stock: 45, unit: 'كيلو', image: 'https://placehold.co/100x100.png?text=لحم', dataAiHint: 'meat beef' },
-  { id: '6', name: 'خيار بلدي', category: 'خضروات', price: 1.50, stock: 200, unit: 'كيلو', image: 'https://placehold.co/100x100.png?text=خيار', dataAiHint: 'cucumber vegetable' },
-  { id: '7', name: 'أرز بسمتي فاخر', category: 'بقالة', price: 5.25, stock: 90, unit: 'كيلو', image: 'https://placehold.co/100x100.png?text=أرز', dataAiHint: 'rice grains' },
-  { id: '8', name: 'زيت زيتون بكر', category: 'بقالة', price: 12.00, stock: 70, unit: 'لتر', image: 'https://placehold.co/100x100.png?text=زيت', dataAiHint: 'oil olive' },
-  { id: '9', name: 'مناديل ورقية (طرد)', category: 'أخرى', price: 8.50, stock: 50, unit: 'طرد', image: 'https://placehold.co/100x100.png?text=مناديل', dataAiHint: 'tissue paper' },
-  { id: '10', name: 'مسحوق غسيل (غرام)', category: 'منظفات', price: 0.05, stock: 10000, unit: 'غرام', image: 'https://placehold.co/100x100.png?text=مسحوق', dataAiHint: 'detergent powder' },
+  { 
+    id: '1', name: 'تفاح عضوي فاخر', category: 'فواكه', unit: 'كيلو', productType: 'منتج موصول',
+    purchasePrice: 8.50, salePrice: 12.50, stock: 150, minStockLevel: 10, 
+    image: 'https://placehold.co/100x100.png?text=تفاح', dataAiHint: 'apple fruit', description: 'تفاح أحمر عضوي طازج من المزرعة.'
+  },
+  { 
+    id: '2', name: 'خبز قمح كامل طازج', category: 'مخبوزات', unit: 'قطعة', productType: 'منتج بباركود', barcodeNumber: '1234567890123',
+    purchasePrice: 2.00, salePrice: 3.49, stock: 80, minStockLevel: 20, 
+    image: 'https://placehold.co/100x100.png?text=خبز', dataAiHint: 'bread pastry', description: 'خبز مصنوع من دقيق القمح الكامل الغني بالألياف.'
+  },
+  { 
+    id: '3', name: 'بيض مائدة (طبق 30)', category: 'ألبان وبيض', unit: 'علبة', productType: 'منتج عادي',
+    purchasePrice: 12.00, salePrice: 15.00, stock: 60, minStockLevel: 5, 
+    image: 'https://placehold.co/100x100.png?text=بيض', dataAiHint: 'eggs dairy'
+  },
+  { 
+    id: '4', name: 'حليب لوز (١ لتر)', category: 'مشروبات', unit: 'لتر', productType: 'منتج بباركود', barcodeNumber: '9876543210987',
+    purchasePrice: 9.00, salePrice: 11.50, stock: 120, minStockLevel: 15, 
+    image: 'https://placehold.co/100x100.png?text=حليب', dataAiHint: 'almond milk' 
+  },
+  { 
+    id: '5', name: 'لحم بقري مفروم بلدي', category: 'لحوم', unit: 'كيلو', productType: 'منتج موصول',
+    purchasePrice: 55.00, salePrice: 70.00, stock: 45, minStockLevel: 5, 
+    image: 'https://placehold.co/100x100.png?text=لحم', dataAiHint: 'beef mince', description: 'لحم بقري مفروم طازج، مثالي للطهي.'
+  },
 ];
 
 const ProductsPage = () => {
@@ -48,10 +62,11 @@ const ProductsPage = () => {
     });
   };
 
+  // Updated onSave to handle new Product structure
   const handleSaveProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & { id?: string }) => {
     if (editingProduct) {
       setProducts(prevProducts => 
-        prevProducts.map(p => (p.id === editingProduct.id ? { ...p, ...productData, id: editingProduct.id } : p))
+        prevProducts.map(p => (p.id === editingProduct.id ? { ...editingProduct, ...productData } : p))
       );
       toast({
         title: 'تم تحديث المنتج',
@@ -59,9 +74,18 @@ const ProductsPage = () => {
       });
     } else {
       const newProductWithId: Product = {
-        ...productData,
-        id: String(Date.now()), // Generate a new ID for new products
-        image: productData.image || `https://placehold.co/100x100.png?text=${encodeURIComponent(productData.name.substring(0,10))}`,
+        id: String(Date.now()), 
+        name: productData.name,
+        description: productData.description,
+        category: productData.category,
+        unit: productData.unit,
+        productType: productData.productType,
+        barcodeNumber: productData.barcodeNumber,
+        purchasePrice: productData.purchasePrice,
+        salePrice: productData.salePrice,
+        stock: productData.stock,
+        minStockLevel: productData.minStockLevel,
+        image: productData.image || `https://placehold.co/100x100.png?text=${encodeURIComponent(productData.name.substring(0,2))}`,
         dataAiHint: `${productData.category.split(" ")[0] || ""} ${productData.name.split(" ")[0] || ""}`.toLowerCase().trim()
       };
       setProducts(prevProducts => [newProductWithId, ...prevProducts]);
@@ -105,5 +129,3 @@ const ProductsPage = () => {
 };
 
 export default ProductsPage;
-
-    
