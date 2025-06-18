@@ -42,15 +42,15 @@ interface ProductTableProps {
 
 const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterProductType, setFilterProductType] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all'); // Default to "all"
+  const [filterProductType, setFilterProductType] = useState('all'); // Default to "all"
 
-  const ALL_FILTER_VALUE = "all"; // Using a constant for clarity
+  const ALL_FILTER_VALUE = "all"; 
 
   const filteredProducts = products.filter(product => {
-    const categoryMatch = filterCategory === '' || filterCategory === ALL_FILTER_VALUE || product.category === filterCategory;
-    const productTypeMatch = filterProductType === '' || filterProductType === ALL_FILTER_VALUE || product.productType === filterProductType;
-    const searchTermMatch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const categoryMatch = filterCategory === ALL_FILTER_VALUE || product.category === filterCategory;
+    const productTypeMatch = filterProductType === ALL_FILTER_VALUE || product.productType === filterProductType;
+    const searchTermMatch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) || (product.barcodeNumber && product.barcodeNumber.includes(searchTerm));
     
     return searchTermMatch && categoryMatch && productTypeMatch;
   });
@@ -58,10 +58,10 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="font-headline text-xl text-foreground">قائمة المنتجات</CardTitle>
+        <CardTitle className="font-headline text-xl text-foreground">قائمة المنتجات ({filteredProducts.length})</CardTitle>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           <Input 
-            placeholder="بحث باسم المنتج..." 
+            placeholder="بحث بالاسم أو الباركود..." 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)}
             className="bg-input/50 focus:bg-input"
@@ -172,4 +172,3 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
 };
 
 export default ProductTable;
-

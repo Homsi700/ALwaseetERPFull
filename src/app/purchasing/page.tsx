@@ -21,7 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
-import type { Product as ProductType } from '@/components/products/ProductTable';
+import type { Product as ProductType } from '@/components/products/ProductTable'; // Using existing ProductType definition
 
 
 interface Supplier {
@@ -37,7 +37,7 @@ interface Supplier {
 
 interface PurchaseOrderItem {
   product_id: string;
-  productName?: string; 
+  productName?: string; // For display in form, not stored if items is JSONB
   quantity: number;
   unit_price: number;
   total_price: number;
@@ -48,10 +48,10 @@ interface PurchaseOrder {
   created_at?: string;
   order_number: string;
   supplier_id: string;
-  supplier_name?: string; 
+  supplier_name?: string; // Fetched via join or from suppliers state
   order_date: string;
   expected_delivery_date?: string;
-  items: PurchaseOrderItem[]; // Stored as JSONB
+  items: PurchaseOrderItem[]; // Stored as JSONB in Supabase
   total_amount: number;
   status: 'مسودة' | 'مرسل' | 'مؤكد' | 'مستلم جزئياً' | 'مستلم بالكامل' | 'ملغى';
 }
@@ -60,18 +60,19 @@ interface PurchaseInvoice {
   id: string;
   created_at?: string;
   invoice_number: string;
-  purchase_order_id?: string; 
+  purchase_order_id?: string; // Optional link to a PO
   supplier_id: string;
-  supplier_name?: string; 
+  supplier_name?: string; // Fetched via join or from suppliers state
   invoice_date: string;
   due_date?: string;
-  items: PurchaseOrderItem[]; // Stored as JSONB
+  items: PurchaseOrderItem[]; // Stored as JSONB in Supabase
   sub_total: number;
   tax_amount: number;
   grand_total: number;
   status: 'غير مدفوعة' | 'مدفوعة جزئياً' | 'مدفوعة بالكامل' | 'متأخرة';
 }
 
+// Mappers
 const mapToSupabaseSupplier = (supplier: Omit<Supplier, 'id' | 'created_at'> & { id?: string }) => ({
   name: supplier.name,
   contact_person: supplier.contact_person,
@@ -97,7 +98,7 @@ const mapToSupabasePO = (po: Omit<PurchaseOrder, 'id' | 'created_at' | 'supplier
   supplier_id: po.supplier_id,
   order_date: po.order_date,
   expected_delivery_date: po.expected_delivery_date,
-  items: po.items,
+  items: po.items.map(({ productName, ...item }) => item), // Remove productName before saving
   total_amount: po.total_amount,
   status: po.status,
 });
@@ -107,7 +108,7 @@ const mapFromSupabasePO = (data: any, supplierName?: string): PurchaseOrder => (
   created_at: data.created_at,
   order_number: data.order_number,
   supplier_id: data.supplier_id,
-  supplier_name: supplierName || data.supplier_id,
+  supplier_name: supplierName || data.suppliers?.name || data.supplier_id, // Handle if suppliers table is joined
   order_date: data.order_date,
   expected_delivery_date: data.expected_delivery_date,
   items: data.items || [],
@@ -121,7 +122,7 @@ const mapToSupabaseInvoice = (inv: Omit<PurchaseInvoice, 'id' | 'created_at' | '
     supplier_id: inv.supplier_id,
     invoice_date: inv.invoice_date,
     due_date: inv.due_date,
-    items: inv.items,
+    items: inv.items.map(({ productName, ...item }) => item), // Remove productName
     sub_total: inv.sub_total,
     tax_amount: inv.tax_amount,
     grand_total: inv.grand_total,
@@ -134,7 +135,7 @@ const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoi
     invoice_number: data.invoice_number,
     purchase_order_id: data.purchase_order_id,
     supplier_id: data.supplier_id,
-    supplier_name: supplierName || data.supplier_id,
+    supplier_name: supplierName || data.suppliers?.name || data.supplier_id, // Handle join
     invoice_date: data.invoice_date,
     due_date: data.due_date,
     items: data.items || [],
@@ -166,10 +167,13 @@ const PurchasingPage = () => {
   
   const [currentPOItems, setCurrentPOItems] = useState<PurchaseOrderItem[]>([]);
   const [currentInvoiceItems, setCurrentInvoiceItems] = useState<PurchaseOrderItem[]>([]);
+  const [invoiceTaxAmount, setInvoiceTaxAmount] = useState<number>(0);
+
 
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Fetch Callbacks
   const fetchSuppliers = useCallback(async () => {
     if (!user) return;
     setIsLoadingSuppliers(true);
@@ -190,7 +194,7 @@ const PurchasingPage = () => {
     try {
       const { data: posData, error: posError } = await supabase
         .from('purchase_orders')
-        .select('*, suppliers(name)')
+        .select('*, suppliers(name)') // Join with suppliers table
         .order('order_date', { ascending: false });
       if (posError) throw posError;
       
@@ -210,7 +214,7 @@ const PurchasingPage = () => {
     try {
       const { data: invData, error: invError } = await supabase
         .from('purchase_invoices')
-        .select('*, suppliers(name)')
+        .select('*, suppliers(name)') // Join with suppliers table
         .order('invoice_date', { ascending: false });
       if (invError) throw invError;
 
@@ -236,6 +240,13 @@ const PurchasingPage = () => {
             purchasePrice: p.purchase_price,
             unit: p.unit,
             stock: p.stock,
+            // Fill other required fields from ProductType with defaults if not available from this specific query
+            description: p.description || '',
+            category: p.category || 'غير محدد',
+            productType: p.product_type || 'منتج عادي',
+            salePrice: p.sale_price || 0,
+            minStockLevel: p.min_stock_level || 0,
+
         } as ProductType)));
     } catch (error: any) {
         toast({ title: 'خطأ في جلب المنتجات للنماذج', description: error.message, variant: 'destructive'});
@@ -254,7 +265,7 @@ const PurchasingPage = () => {
     }
   }, [user, fetchSuppliers, fetchProductsForForm, fetchPOs, fetchInvoices]);
 
-
+  // Supplier Handlers
   const handleAddSupplier = () => { setEditingSupplier(undefined); setIsSupplierModalOpen(true); };
   const handleEditSupplier = (supplier: Supplier) => { setEditingSupplier(supplier); setIsSupplierModalOpen(true); };
   const handleDeleteSupplier = async (id: string) => {
@@ -270,12 +281,13 @@ const PurchasingPage = () => {
   const handleSaveSupplier = async (data: Omit<Supplier, 'id' | 'created_at'> & {id?: string}) => {
     const supabaseData = mapToSupabaseSupplier(data);
     try {
-      if (editingSupplier) {
+      if (editingSupplier && editingSupplier.id) {
         const { error } = await supabase.from('suppliers').update(supabaseData).eq('id', editingSupplier.id);
         if (error) throw error;
         toast({ title: 'تم تحديث المورد'});
       } else {
-        const { error } = await supabase.from('suppliers').insert(supabaseData);
+        const {id, ...insertData} = supabaseData; // Ensure id is not passed for insert
+        const { error } = await supabase.from('suppliers').insert(insertData);
         if (error) throw error;
         toast({ title: 'تمت إضافة مورد'});
       }
@@ -287,8 +299,18 @@ const PurchasingPage = () => {
     }
   };
 
+  // Purchase Order Handlers
   const handleAddPO = () => { setEditingPO(undefined); setCurrentPOItems([]); setIsPOModalOpen(true); };
-  const handleEditPO = (po: PurchaseOrder) => { setEditingPO(po); setCurrentPOItems(po.items || []); setIsPOModalOpen(true); };
+  const handleEditPO = (po: PurchaseOrder) => { 
+    setEditingPO(po); 
+    // Populate items with productName for display
+    const itemsWithNames = po.items.map(item => {
+        const product = availableProducts.find(p => p.id === item.product_id);
+        return {...item, productName: product?.name || item.product_id };
+    });
+    setCurrentPOItems(itemsWithNames || []); 
+    setIsPOModalOpen(true); 
+  };
   const handleDeletePO = async (id: string) => { 
     try {
         const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
@@ -300,20 +322,22 @@ const PurchasingPage = () => {
     }
   };
   const handleSavePO = async (formData: Omit<PurchaseOrder, 'id'|'created_at'|'supplier_name'|'total_amount'> & {items: PurchaseOrderItem[], total_amount?: number}) => {
+    const poTotalAmount = currentPOItems.reduce((sum, item) => sum + item.total_price, 0);
     const poToSave: Omit<PurchaseOrder, 'id'|'created_at'|'supplier_name'> = {
         ...formData,
         order_number: formData.order_number || `PO-${Date.now().toString().slice(-6)}`,
         items: currentPOItems,
-        total_amount: currentPOItems.reduce((sum, item) => sum + item.total_price, 0),
+        total_amount: poTotalAmount,
     };
     const supabaseData = mapToSupabasePO(poToSave);
     try {
-        if (editingPO) {
+        if (editingPO && editingPO.id) {
             const { error } = await supabase.from('purchase_orders').update(supabaseData).eq('id', editingPO.id);
             if (error) throw error;
             toast({ title: 'تم تحديث أمر الشراء'});
         } else {
-            const { error } = await supabase.from('purchase_orders').insert(supabaseData);
+            const {id, ...insertData} = supabaseData;
+            const { error } = await supabase.from('purchase_orders').insert(insertData);
             if (error) throw error;
             toast({ title: 'تم إنشاء أمر شراء'});
         }
@@ -336,15 +360,25 @@ const PurchasingPage = () => {
         item.unit_price = product?.purchasePrice || 0;
     }
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
-      item.total_price = (item.quantity || 0) * (item.unit_price || 0);
+      item.total_price = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0);
     }
     setCurrentPOItems(updatedItems);
   };
   const addPOItem = () => setCurrentPOItems([...currentPOItems, { product_id: '', productName: '', quantity: 1, unit_price: 0, total_price: 0 }]);
   const removePOItem = (index: number) => setCurrentPOItems(currentPOItems.filter((_, i) => i !== index));
 
-  const handleAddInvoice = () => { setEditingInvoice(undefined); setCurrentInvoiceItems([]); setIsInvoiceModalOpen(true); };
-  const handleEditInvoice = (invoice: PurchaseInvoice) => { setEditingInvoice(invoice); setCurrentInvoiceItems(invoice.items || []); setIsInvoiceModalOpen(true); };
+  // Purchase Invoice Handlers
+  const handleAddInvoice = () => { setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); setIsInvoiceModalOpen(true); };
+  const handleEditInvoice = (invoice: PurchaseInvoice) => { 
+    setEditingInvoice(invoice); 
+    const itemsWithNames = invoice.items.map(item => {
+        const product = availableProducts.find(p => p.id === item.product_id);
+        return {...item, productName: product?.name || item.product_id };
+    });
+    setCurrentInvoiceItems(itemsWithNames || []); 
+    setInvoiceTaxAmount(invoice.tax_amount || 0);
+    setIsInvoiceModalOpen(true); 
+  };
   const handleDeleteInvoice = async (id: string) => { 
     try {
         const { error } = await supabase.from('purchase_invoices').delete().eq('id', id);
@@ -357,7 +391,7 @@ const PurchasingPage = () => {
   };
   const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'> & { items: PurchaseOrderItem[], tax_amount?: number, sub_total?: number, grand_total?: number}) => {
     const subTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
-    const taxAmount = formData.tax_amount || 0;
+    const taxAmount = formData.tax_amount || 0; // Use the state for tax_amount
     const invoiceToSave: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> = {
         ...formData,
         invoice_number: formData.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
@@ -369,19 +403,27 @@ const PurchasingPage = () => {
     const supabaseData = mapToSupabaseInvoice(invoiceToSave);
 
     try {
-        if (editingInvoice) {
+        if (editingInvoice && editingInvoice.id) {
             const { error } = await supabase.from('purchase_invoices').update(supabaseData).eq('id', editingInvoice.id);
             if (error) throw error;
             toast({ title: 'تم تحديث الفاتورة'});
-            // Note: Stock update on edit is complex, needs to compare old vs new items. For now, only on new.
+            // TODO: Handle stock update on edit if item quantities change. This is complex as it requires comparing old vs new quantities for each item.
+            // For now, stock update is only on new invoice creation.
         } else {
-            const { data: newInvoice, error } = await supabase.from('purchase_invoices').insert(supabaseData).select().single();
+            const {id, ...insertData} = supabaseData;
+            const { data: newInvoice, error } = await supabase.from('purchase_invoices').insert(insertData).select().single();
             if (error) throw error;
             if (newInvoice) {
+                // Update stock for each item in the new invoice
                 for (const item of currentInvoiceItems) {
                     const product = availableProducts.find(p => p.id === item.product_id);
                     if (product) {
-                        const newStock = (product.stock || 0) + item.quantity;
+                         const { data: currentProductData, error: fetchError } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                         if(fetchError || !currentProductData) {
+                            toast({ title: `خطأ في جلب مخزون ${product.name}`, description: fetchError?.message, variant: 'destructive'});
+                            continue; 
+                         }
+                        const newStock = (currentProductData.stock || 0) + item.quantity;
                         const { error: stockError } = await supabase.from('products').update({ stock: newStock }).eq('id', item.product_id);
                         if (stockError) {
                             toast({ title: `خطأ في تحديث مخزون ${product.name}`, description: stockError.message, variant: 'destructive'});
@@ -389,13 +431,14 @@ const PurchasingPage = () => {
                     }
                 }
                 toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-                fetchProductsForForm(); 
+                fetchProductsForForm(); // Re-fetch products to reflect stock changes
             }
         }
         fetchInvoices();
         setIsInvoiceModalOpen(false);
         setEditingInvoice(undefined);
         setCurrentInvoiceItems([]);
+        setInvoiceTaxAmount(0);
     } catch (error: any) {
         toast({ title: 'خطأ في حفظ الفاتورة', description: error.message, variant: 'destructive'});
     }
@@ -410,7 +453,7 @@ const PurchasingPage = () => {
         item.unit_price = product?.purchasePrice || 0;
     }
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
-      item.total_price = (item.quantity || 0) * (item.unit_price || 0);
+      item.total_price = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0);
     }
     setCurrentInvoiceItems(updatedItems);
   };
@@ -424,6 +467,11 @@ const PurchasingPage = () => {
     return 'bg-muted/50 text-muted-foreground border-muted-foreground/30';
   };
   
+  const poSubTotal = currentPOItems.reduce((sum, item) => sum + item.total_price, 0);
+  const invoiceSubTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
+  const invoiceGrandTotal = invoiceSubTotal + invoiceTaxAmount;
+
+
   if (isLoadingProducts && isLoadingSuppliers && isLoadingPOs && isLoadingInvoices && !user) { 
     return (
       <AppLayout>
@@ -602,10 +650,11 @@ const PurchasingPage = () => {
           </TabsContent>
         </Tabs>
 
+        {/* Supplier Modal */}
         <Dialog open={isSupplierModalOpen} onOpenChange={(isOpen) => { setIsSupplierModalOpen(isOpen); if (!isOpen) setEditingSupplier(undefined); }}>
           <DialogContent className="sm:max-w-lg bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingSupplier ? 'تعديل المورد' : 'إضافة مورد جديد'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveSupplier({id: editingSupplier?.id, name: fd.get('s-name') as string, contact_person: fd.get('s-contact') as string, email: fd.get('s-email') as string, phone: fd.get('s-phone') as string, address: fd.get('s-address') as string, notes: fd.get('s-notes') as string });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveSupplier({id: editingSupplier?.id, name: fd.get('s-name') as string, contact_person: fd.get('s-contact') as string | undefined, email: fd.get('s-email') as string | undefined, phone: fd.get('s-phone') as string, address: fd.get('s-address') as string | undefined, notes: fd.get('s-notes') as string | undefined });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div><Label htmlFor="s-name">اسم المورد</Label><Input id="s-name" name="s-name" defaultValue={editingSupplier?.name} required className="mt-1 bg-input/50"/></div>
               <div><Label htmlFor="s-contact">مسؤول التواصل</Label><Input id="s-contact" name="s-contact" defaultValue={editingSupplier?.contact_person} className="mt-1 bg-input/50"/></div>
               <div><Label htmlFor="s-email">البريد الإلكتروني</Label><Input id="s-email" name="s-email" type="email" defaultValue={editingSupplier?.email} className="mt-1 bg-input/50"/></div>
@@ -617,6 +666,7 @@ const PurchasingPage = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Purchase Order Modal */}
         <Dialog open={isPOModalOpen} onOpenChange={(isOpen) => { setIsPOModalOpen(isOpen); if (!isOpen) { setEditingPO(undefined); setCurrentPOItems([]);} }}>
           <DialogContent className="sm:max-w-2xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingPO ? `تعديل أمر الشراء: ${editingPO.order_number}` : 'إنشاء أمر شراء جديد'}</DialogTitle></DialogHeader>
@@ -643,7 +693,7 @@ const PurchasingPage = () => {
               <Label className="text-lg font-medium">بنود أمر الشراء</Label>
               {currentPOItems.map((item, index) => (
                 <Card key={index} className="p-3 space-y-2 bg-muted/30">
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
                         <div><Label htmlFor={`po-item-prod-${index}`}>المنتج</Label>
                              <Select value={item.product_id} onValueChange={(val) => handlePOItemChange(index, 'product_id', val)} dir="rtl">
                                 <SelectTrigger className="bg-input/50"><SelectValue placeholder={isLoadingProducts ? "جاري التحميل..." : "اختر منتجًا"}/></SelectTrigger>
@@ -651,22 +701,23 @@ const PurchasingPage = () => {
                             </Select>
                         </div>
                         <div><Label htmlFor={`po-item-qty-${index}`}>الكمية</Label><Input id={`po-item-qty-${index}`} type="number" value={item.quantity} onChange={e=>handlePOItemChange(index, 'quantity', parseFloat(e.target.value))} className="bg-input/50" min="1"/></div>
-                        <div><Label htmlFor={`po-item-price-${index}`}>سعر الوحدة</Label><Input id={`po-item-price-${index}`} type="number" value={item.unit_price} onChange={e=>handlePOItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01"/></div>
-                        <div className="flex items-end gap-2">
-                             <span className="text-sm w-full text-center p-2 bg-background rounded-md">الإجمالي: {item.total_price.toFixed(2)}</span>
+                        <div><Label htmlFor={`po-item-price-${index}`}>سعر الوحدة</Label><Input id={`po-item-price-${index}`} type="number" value={item.unit_price} onChange={e=>handlePOItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01" readOnly/></div> {/* Made readOnly as it's derived from product */}
+                        <div className="flex items-center gap-2">
+                             <span className="text-sm w-full text-left p-2 bg-background rounded-md min-w-[80px]"> {item.total_price.toFixed(2)} ر.س</span>
                             <Button type="button" variant="destructive" size="icon" onClick={() => removePOItem(index)} className="h-9 w-9"><Trash2Icon className="h-4 w-4"/></Button>
                         </div>
                     </div>
                 </Card>
               ))}
               <Button type="button" variant="outline" onClick={addPOItem} className="w-full"><PlusCircle className="ml-2 h-4 w-4"/>إضافة بند</Button>
-              <div className="text-right font-semibold text-lg">الإجمالي الكلي: {currentPOItems.reduce((sum, item) => sum + item.total_price, 0).toFixed(2)} ر.س</div>
+              <div className="text-right font-semibold text-lg">الإجمالي الكلي: {poSubTotal.toFixed(2)} ر.س</div>
               <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ أمر الشراء</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]);} }}>
+        {/* Purchase Invoice Modal */}
+        <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); } }}>
           <DialogContent className="sm:max-w-2xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingInvoice ? `تعديل فاتورة الشراء: ${editingInvoice.invoice_number}` : 'إضافة فاتورة شراء جديدة'}</DialogTitle></DialogHeader>
             <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, purchase_order_id: fd.get('inv-po') as string | undefined, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), items: currentInvoiceItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
@@ -682,7 +733,7 @@ const PurchasingPage = () => {
                             <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder={isLoadingPOs ? "جاري التحميل..." : "اختر أمر شراء (إن وجد)"} /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="">-- لا يوجد --</SelectItem>
-                                {purchaseOrders.map(po => <SelectItem key={po.id} value={po.order_number}>{po.order_number} - {po.supplier_name}</SelectItem>)}
+                                {purchaseOrders.filter(po => po.supplier_id === (document.querySelector('[name="inv-supplier"]') as HTMLSelectElement)?.value).map(po => <SelectItem key={po.id} value={po.id}>{po.order_number} - {po.supplier_name}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
@@ -701,7 +752,7 @@ const PurchasingPage = () => {
                  <Label className="text-lg font-medium">بنود الفاتورة</Label>
                 {currentInvoiceItems.map((item, index) => (
                     <Card key={index} className="p-3 space-y-2 bg-muted/30">
-                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                         <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
                             <div><Label>المنتج</Label>
                                 <Select value={item.product_id} onValueChange={(val) => handleInvoiceItemChange(index, 'product_id', val)} dir="rtl">
                                 <SelectTrigger className="bg-input/50"><SelectValue placeholder={isLoadingProducts ? "جاري التحميل..." : "اختر منتجًا"}/></SelectTrigger>
@@ -709,9 +760,9 @@ const PurchasingPage = () => {
                             </Select>
                             </div>
                             <div><Label>الكمية</Label><Input type="number" value={item.quantity} onChange={e=>handleInvoiceItemChange(index, 'quantity', parseFloat(e.target.value))} className="bg-input/50" min="1"/></div>
-                            <div><Label>سعر الوحدة</Label><Input type="number" value={item.unit_price} onChange={e=>handleInvoiceItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01"/></div>
-                            <div className="flex items-end gap-2">
-                                <span className="text-sm w-full text-center p-2 bg-background rounded-md">الإجمالي: {item.total_price.toFixed(2)}</span>
+                            <div><Label>سعر الوحدة</Label><Input type="number" value={item.unit_price} onChange={e=>handleInvoiceItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01" readOnly/></div> {/* Made readOnly */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm w-full text-left p-2 bg-background rounded-md min-w-[80px]"> {item.total_price.toFixed(2)} ر.س</span>
                                 <Button type="button" variant="destructive" size="icon" onClick={() => removeInvoiceItem(index)} className="h-9 w-9"><Trash2Icon className="h-4 w-4"/></Button>
                             </div>
                         </div>
@@ -720,12 +771,14 @@ const PurchasingPage = () => {
                 <Button type="button" variant="outline" onClick={addInvoiceItem} className="w-full"><PlusCircle className="ml-2 h-4 w-4"/>إضافة بند للفاتورة</Button>
                 <Separator />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                    <div className="md:col-span-2 space-y-1">
-                        <p className="text-sm">المجموع الفرعي: <span className="font-semibold">{currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0).toFixed(2)} ر.س</span></p>
+                    <div className="md:col-span-2 space-y-1 pt-4">
+                        <p className="text-md">المجموع الفرعي: <span className="font-semibold">{invoiceSubTotal.toFixed(2)} ر.س</span></p>
                     </div>
-                    <div><Label htmlFor="inv-tax">مبلغ الضريبة</Label><Input id="inv-tax" name="inv-tax" type="number" defaultValue={editingInvoice?.tax_amount || 0} step="0.01" className="mt-1 bg-input/50"/></div>
+                    <div><Label htmlFor="inv-tax">مبلغ الضريبة</Label><Input id="inv-tax" name="inv-tax" type="number" value={invoiceTaxAmount} onChange={(e) => setInvoiceTaxAmount(parseFloat(e.target.value) || 0)} step="0.01" className="mt-1 bg-input/50"/></div>
                 </div>
-                 <div className="text-right font-semibold text-lg">الإجمالي الكلي للفاتورة: <span className="font-headline text-primary">{(currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0) + parseFloat((document.querySelector('input[name="inv-tax"]') as HTMLInputElement)?.value || '0')).toFixed(2)} ر.س</span></div>
+                 <div className="text-right font-semibold text-lg">الإجمالي الكلي للفاتورة: <span className="font-headline text-primary">{invoiceGrandTotal.toFixed(2)} ر.س</span></div>
+                 {/* Comment for stock update on invoice edit */}
+                 {editingInvoice && <p className="text-xs text-muted-foreground">ملاحظة: تحديث المخزون عند تعديل فاتورة شراء حالياً لا يعيد حساب الفروقات في كميات البنود. يتم تحديث المخزون بشكل أساسي عند إنشاء فاتورة جديدة. لضمان دقة المخزون عند التعديل، يتطلب الأمر منطقاً متقدماً (يفضل عبر وظائف خلفية أو trigger في قاعدة البيانات).</p>}
 
               <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ الفاتورة</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
             </form>

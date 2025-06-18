@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, TrendingUp, Users, DollarSign, ShoppingBag, AlertTriangle, PieChart, BarChart2, FileSpreadsheet } from 'lucide-react';
-import { BarChart, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line } from 'recharts'; // Removed ResponsiveContainer as ChartContainer handles it
+import { BarChart as RechartsBarChart, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import React from 'react';
 
@@ -39,11 +39,11 @@ const topProductsData = [
 
 const chartConfig = {
   sales: {
-    label: "المبيعات",
+    label: "المبيعات (ر.س)",
     color: "hsl(var(--chart-1))",
   },
   profit: {
-    label: "الأرباح",
+    label: "الأرباح (ر.س)",
     color: "hsl(var(--chart-2))",
   },
   newCustomers: {
@@ -131,7 +131,7 @@ const DashboardPage = () => {
             </CardHeader>
             <CardContent className="h-[350px] p-0 pr-4">
               <ChartContainer config={chartConfig} className="w-full h-full">
-                <BarChart data={salesData} layout="vertical" barCategoryGap="20%">
+                <RechartsBarChart data={salesData} layout="vertical" barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" axisLine={false} tickLine={false} />
                   <YAxis dataKey="month" type="category" axisLine={false} tickLine={false} width={60} />
@@ -139,7 +139,7 @@ const DashboardPage = () => {
                   <Legend content={<ChartLegendContent />} />
                   <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
                   <Bar dataKey="profit" fill="var(--color-profit)" radius={[0, 4, 4, 0]} name={chartConfig.profit.label} />
-                </BarChart>
+                </RechartsBarChart>
               </ChartContainer>
             </CardContent>
           </Card>
@@ -173,13 +173,13 @@ const DashboardPage = () => {
             </CardHeader>
             <CardContent className="h-[300px] p-0">
                 <ChartContainer config={chartConfig} className="w-full h-full">
-                    <BarChart data={topProductsData} layout="horizontal" margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                    <RechartsBarChart data={topProductsData} layout="horizontal" margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
                         <YAxis orientation="right" axisLine={false} tickLine={false} tickMargin={8} />
                         <Tooltip content={<ChartTooltipContent />} cursor={{fill: 'hsl(var(--muted))'}}/>
-                        <Bar dataKey="value" fill="var(--color-topProduct)" radius={[4, 4, 0, 0]} name="المبيعات" />
-                    </BarChart>
+                        <Bar dataKey="value" fill="var(--color-topProduct)" radius={[4, 4, 0, 0]} name="المبيعات (ر.س)" />
+                    </RechartsBarChart>
                 </ChartContainer>
             </CardContent>
           </Card>
@@ -233,11 +233,11 @@ const DashboardPage = () => {
         <style jsx global>{`
           @keyframes marquee {
             0% { transform: translateX(0%); }
-            100% { transform: translateX(-50%); } /* Adjusted for RTL, content moves left */
+            100% { transform: translateX(-50%); } 
           }
           .animate-marquee {
             animation: marquee 30s linear infinite;
-            display: inline-block; /* Ensure it's an inline block for transform to work as expected */
+            display: inline-block; 
           }
         `}</style>
 

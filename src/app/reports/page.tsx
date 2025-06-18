@@ -12,38 +12,40 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from "@/components/ui/calendar";
-import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch } from 'lucide-react';
+import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch, DollarSign } from 'lucide-react';
 import { explainFinancialReport, ExplainFinancialReportInput, ExplainFinancialReportOutput } from '@/ai/flows/financial-report-assistant';
 import { useToast } from '@/hooks/use-toast';
 import { format } from "date-fns";
 import { arSA } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line, PieChart } from 'recharts'; // Added PieChart
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 
 const MOCK_PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 const chartConfig = {
-  sales: { label: "المبيعات", color: "hsl(var(--chart-1))" },
-  profit: { label: "الأرباح", color: "hsl(var(--chart-2))" }, // Example, not directly fetched yet
-  costs: { label: "التكاليف", color: "hsl(var(--chart-3))" }, // Example, not directly fetched yet
-  revenue: { label: "الإيرادات", color: "hsl(var(--chart-1))" }, // Used for P&L example
-  cogs: { label: "تكلفة البضاعة المباعة", color: "hsl(var(--chart-2))" }, // Used for P&L example
-  expenses: { label: "المصروفات", color: "hsl(var(--chart-4))" }, // Used for P&L example
-  netProfit: { label: "صافي الربح", color: "hsl(var(--chart-5))" }, // Used for P&L example
-  inventoryValue: { label: "قيمة المخزون", color: "hsl(var(--chart-1))"}, // Example
-  products: { label: "المنتجات", color: "hsl(var(--chart-3))" }, // For products by category
-  newCustomers: { label: "عملاء جدد", color: "hsl(var(--chart-1))"}, // Example
-  activeCustomers: { label: "عملاء نشطون", color: "hsl(var(--chart-2))"}, // Example
-  productCategory: {label: "فئة المنتج", color: "hsl(var(--chart-3))"}
+  sales: { label: "المبيعات (ر.س)", color: "hsl(var(--chart-1))" },
+  profit: { label: "الأرباح (ر.س)", color: "hsl(var(--chart-2))" }, 
+  costs: { label: "التكاليف (ر.س)", color: "hsl(var(--chart-3))" }, 
+  revenue: { label: "الإيرادات (ر.س)", color: "hsl(var(--chart-1))" }, 
+  cogs: { label: "تكلفة البضاعة المباعة (ر.س)", color: "hsl(var(--chart-2))" }, 
+  expenses: { label: "المصروفات (ر.س)", color: "hsl(var(--chart-4))" }, 
+  netProfit: { label: "صافي الربح (ر.س)", color: "hsl(var(--chart-5))" }, 
+  inventoryValue: { label: "قيمة المخزون (ر.س)", color: "hsl(var(--chart-1))"},
+  products: { label: "عدد المنتجات", color: "hsl(var(--chart-3))" }, 
+  newCustomers: { label: "عملاء جدد", color: "hsl(var(--chart-1))"}, 
+  activeCustomers: { label: "عملاء نشطون", color: "hsl(var(--chart-2))"}, 
+  productCategory: {label: "فئة المنتج", color: "hsl(var(--chart-3))"},
+  averageOrderValue: { label: "متوسط قيمة الطلب (ر.س)", color: "hsl(var(--chart-4))"},
 } satisfies React.ComponentProps<typeof ChartContainer>["config"];
 
-interface SalesSummaryData { name: string; sales: number; /* profit: number; costs: number; */ } // Simplified for direct Supabase fetch
-interface ProfitLossData { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; } // Remains mock for now
-interface InventoryStatusData { name: string; products: number; } // Changed to count products by category
-interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; } // Remains mock for now
+interface SalesSummaryData { name: string; sales: number; } 
+interface ProfitLossData { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; } 
+interface InventoryStatusData { name: string; products: number; } // Count products by category
+interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; } 
+interface AverageOrderValueData { name: string; averageOrderValue: number; }
 
 
 const FinancialReportsPage = () => {
@@ -56,7 +58,7 @@ const FinancialReportsPage = () => {
   const { user } = useAuth();
 
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), 0, 1),
+    from: new Date(new Date().getFullYear(), new Date().getMonth() -1 , 1), // Default to last month
     to: new Date(),
   });
   const [reportType, setReportType] = useState<string>("sales_summary");
@@ -66,30 +68,27 @@ const FinancialReportsPage = () => {
   
   const [isLoadingReportData, setIsLoadingReportData] = useState(false);
   const [salesSummaryData, setSalesSummaryData] = useState<SalesSummaryData[]>([]);
-  const [profitLossData, setProfitLossData] = useState<ProfitLossData[]>([]); // Mock data for P&L
+  const [profitLossData, setProfitLossData] = useState<ProfitLossData[]>([]); 
   const [inventoryStatusData, setInventoryStatusData] = useState<InventoryStatusData[]>([]);
-  const [customerActivityData, setCustomerActivityData] = useState<CustomerActivityData[]>([]); // Mock data for Customer Activity
+  const [customerActivityData, setCustomerActivityData] = useState<CustomerActivityData[]>([]); 
+  const [averageOrderValueData, setAverageOrderValueData] = useState<AverageOrderValueData[]>([]);
   
   const [filterCategories, setFilterCategories] = useState<{value: string, label: string}[]>([]);
   const [filterClients, setFilterClients] = useState<{value: string, label: string}[]>([]);
   const [filterSuppliers, setFilterSuppliers] = useState<{value: string, label: string}[]>([]);
 
-  // Fetch data for filters
   useEffect(() => {
     const fetchFilterData = async () => {
       if (!user) return;
       try {
-        // Fetch distinct categories from products
         const { data: categoriesData, error: catError } = await supabase.from('products').select('category').distinct();
         if (catError) throw catError;
         setFilterCategories(categoriesData.map((c:any) => ({ value: c.category, label: c.category })));
 
-        // Fetch clients
         const { data: clientsData, error: cliError } = await supabase.from('clients').select('id, name');
         if (cliError) throw cliError;
         setFilterClients(clientsData.map((c:any) => ({ value: c.id, label: c.name })));
         
-        // Fetch suppliers
         const { data: suppliersData, error: supError } = await supabase.from('suppliers').select('id, name');
         if (supError) throw supError;
         setFilterSuppliers(suppliersData.map((s:any) => ({ value: s.id, label: s.name })));
@@ -111,25 +110,27 @@ const FinancialReportsPage = () => {
 
     if (reportType === "sales_summary") {
       try {
-        const { data, error } = await supabase
-          .from('sales')
-          .select('sale_date, total_amount')
-          .gte('sale_date', fromDate)
-          .lte('sale_date', toDate);
+        let query = supabase.from('sales').select('sale_date, total_amount');
+        if (dateRange?.from) query = query.gte('sale_date', fromDate);
+        if (dateRange?.to) query = query.lte('sale_date', toDate);
+        // Add client/supplier/category filters here if needed and if sales table supports them directly
+        // For now, filters are UI only for sales summary.
+
+        const { data, error } = await query;
         if (error) throw error;
 
         const monthlySales: {[key: string]: number} = {};
         data?.forEach(sale => {
-          const month = format(new Date(sale.sale_date), "yyyy-MM", { locale: arSA }); // Format to 'YYYY-MM' for consistent grouping
+          const month = format(new Date(sale.sale_date), "yyyy-MM", { locale: arSA });
           monthlySales[month] = (monthlySales[month] || 0) + sale.total_amount;
         });
         
         const formattedSalesData = Object.entries(monthlySales)
             .map(([monthYear, totalSales]) => ({
-                name: format(new Date(monthYear + '-01'), "MMM yyyy", { locale: arSA }), // Display format
+                name: format(new Date(monthYear + '-01'), "MMM yyyy", { locale: arSA }), 
                 sales: totalSales,
             }))
-            .sort((a,b) => new Date(a.name.split(" ")[1] + "-" + Date.parse(a.name.split(" ")[0] + " 1, 2000")).getTime() - new Date(b.name.split(" ")[1] + "-" + Date.parse(b.name.split(" ")[0] + " 1, 2000")).getTime()); // Basic sort by month/year
+            .sort((a,b) => new Date(a.name.split(" ")[1] + "-" + (arSA.localize?.month(arSA.localize.monthName({width:'abbreviated'}).indexOf(a.name.split(" ")[0])) || 0) + "-01").getTime() - new Date(b.name.split(" ")[1] + "-" + (arSA.localize?.month(arSA.localize.monthName({width:'abbreviated'}).indexOf(b.name.split(" ")[0])) || 0) + "-01").getTime()); 
 
         setSalesSummaryData(formattedSalesData);
         if (formattedSalesData.length === 0) {
@@ -141,16 +142,18 @@ const FinancialReportsPage = () => {
       }
     } else if (reportType === "inventory_status") {
        try {
-        // This fetches count of products per category. More advanced inventory valuation would require purchase_price.
-        const { data, error } = await supabase
-          .from('products')
-          .select('category, id'); // Select 'id' for counting or 'purchase_price, stock' for valuation
+        let query = supabase.from('products').select('category, id');
+        // Category filter can be applied here if selectedCategoryFilter is not empty
+        if (selectedCategoryFilter) {
+            query = query.eq('category', selectedCategoryFilter);
+        }
+        const { data, error } = await query;
         
         if (error) throw error;
         const categoryData: {[key:string]: number} = {};
         data?.forEach(p => {
             const cat = p.category || 'غير مصنف';
-            categoryData[cat] = (categoryData[cat] || 0) + 1; // Count products per category
+            categoryData[cat] = (categoryData[cat] || 0) + 1; 
         });
         setInventoryStatusData(Object.entries(categoryData).map(([name, count]) => ({name, products: count})));
         if (Object.keys(categoryData).length === 0) {
@@ -160,28 +163,51 @@ const FinancialReportsPage = () => {
         toast({ title: `خطأ في جلب حالة المخزون`, description: error.message, variant: 'destructive'});
         setInventoryStatusData([]);
        }
+    } else if (reportType === "average_order_value") {
+        try {
+            let query = supabase.from('sales').select('sale_date, total_amount');
+            if (dateRange?.from) query = query.gte('sale_date', fromDate);
+            if (dateRange?.to) query = query.lte('sale_date', toDate);
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                const totalSalesAmount = data.reduce((sum, sale) => sum + sale.total_amount, 0);
+                const numberOfSales = data.length;
+                const avgOrderValue = totalSalesAmount / numberOfSales;
+                setAverageOrderValueData([{ name: "الفترة المحددة", averageOrderValue: avgOrderValue}]);
+            } else {
+                setAverageOrderValueData([]);
+                 toast({ title: "لا توجد بيانات لحساب متوسط قيمة الطلب", description: "لم يتم العثور على مبيعات للفترة المحددة."});
+            }
+        } catch (error: any) {
+            toast({ title: `خطأ في جلب متوسط قيمة الطلب`, description: error.message, variant: 'destructive'});
+            setAverageOrderValueData([]);
+        }
     } else {
         // For other report types like profit_loss or customer_activity, advanced backend aggregation is needed.
         // We'll clear/mock these for now.
-        setProfitLossData([ // Mock data example
+        setProfitLossData([ 
             { month: 'يناير', revenue: 5000, cogs: 2000, expenses: 1000, netProfit: 2000 },
             { month: 'فبراير', revenue: 6000, cogs: 2500, expenses: 1200, netProfit: 2300 },
         ]);
-        setCustomerActivityData([ // Mock data example
+        setCustomerActivityData([ 
             { date: '2024-01-01', newCustomers: 5, activeCustomers: 50, totalOrders: 70 },
             { date: '2024-02-01', newCustomers: 8, activeCustomers: 55, totalOrders: 80 },
         ]);
         if(reportType !== "sales_summary") setSalesSummaryData([]);
         if(reportType !== "inventory_status") setInventoryStatusData([]);
+        if(reportType !== "average_order_value") setAverageOrderValueData([]);
         toast({ title: "التقرير قيد التطوير", description: `التقارير المتقدمة مثل "${reportTypeLabelMap[reportType]}" تتطلب تجميع بيانات معقد في الواجهة الخلفية (Supabase Views/Functions). يتم عرض بيانات وهمية أو مبسطة حالياً.`});
     }
 
     setIsLoadingReportData(false);
-  }, [user, reportType, dateRange, toast]);
+  }, [user, reportType, dateRange, toast, selectedCategoryFilter]);
 
   useEffect(() => {
     if(user) fetchReportData();
-  }, [fetchReportData, user]); // Added user dependency
+  }, [fetchReportData, user]);
 
 
   const handleSubmitExplanation = async () => {
@@ -214,18 +240,35 @@ const FinancialReportsPage = () => {
   };
   
   const handleExportReport = () => {
-    // This remains a mock export function
     toast({ title: "بدء تصدير التقرير", description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...` });
     setTimeout(() => {
-      toast({ title: "اكتمل التصدير (وهمي)", description: "تم إكمال عملية التصدير الوهمية بنجاح." });
-    }, 2000);
+      // Actual export logic would go here, e.g., generating a CSV or PDF.
+      // For now, it's a mock.
+      const dataToExport = reportType === "sales_summary" ? salesSummaryData : reportType === "inventory_status" ? inventoryStatusData : [];
+      if (dataToExport.length > 0) {
+        const csvContent = "data:text/csv;charset=utf-8," 
+            + Object.keys(dataToExport[0]).join(",") + "\n" 
+            + dataToExport.map(e => Object.values(e).join(",")).join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `${reportType}_report.csv`);
+        document.body.appendChild(link); 
+        link.click();
+        document.body.removeChild(link);
+        toast({ title: "اكتمل التصدير", description: "تم تصدير التقرير كملف CSV." });
+      } else {
+        toast({ title: "فشل التصدير", description: "لا توجد بيانات لتصديرها.", variant: "destructive" });
+      }
+    }, 1000);
   };
 
   const reportTypeLabelMap: {[key: string]: string} = {
     sales_summary: "ملخص المبيعات",
-    profit_loss: "الأرباح والخسائر (وهمي)",
+    profit_loss: "الأرباح والخسائر (مثال)",
     inventory_status: "حالة المخزون (حسب الفئة)",
-    customer_activity: "نشاط العملاء (وهمي)"
+    customer_activity: "نشاط العملاء (مثال)",
+    average_order_value: "متوسط قيمة الطلب"
   };
 
   const renderChartForReportType = () => {
@@ -243,12 +286,10 @@ const FinancialReportsPage = () => {
               <Tooltip content={<ChartTooltipContent />} cursor={{fill: 'hsl(var(--muted))'}}/>
               <Legend content={<ChartLegendContent />}/>
               <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
-              {/* Removed profit and costs as they are not directly fetched from Supabase sales data */}
             </BarChart>
           </ChartContainer>
         ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة المحددة.</p>;
       case "profit_loss":
-         // Renders mock data as complex P&L requires backend aggregation
         return profitLossData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <LineChart data={profitLossData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -262,9 +303,8 @@ const FinancialReportsPage = () => {
               <Line type="monotone" dataKey="netProfit" stroke="var(--color-netProfit)" strokeWidth={3} name={chartConfig.netProfit.label}/>
             </LineChart>
           </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لتقرير الأرباح والخسائر. (بيانات وهمية، يتطلب تجميع من الخلفية)</p>;
+        ) : <p className="text-center text-muted-foreground p-4">مثال لتقرير الأرباح والخسائر. (يتطلب تجميع بيانات متقدم من الخلفية)</p>;
       case "inventory_status":
-        // Renders count of products by category
         return inventoryStatusData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <PieChart>
@@ -279,7 +319,6 @@ const FinancialReportsPage = () => {
           </ChartContainer>
         ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون (حسب الفئة).</p>;
       case "customer_activity":
-         // Renders mock data as this requires backend aggregation
          return customerActivityData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <BarChart data={customerActivityData}>
@@ -292,7 +331,17 @@ const FinancialReportsPage = () => {
               <Bar dataKey="activeCustomers" fill="var(--color-activeCustomers)" name={chartConfig.activeCustomers.label} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لنشاط العملاء. (بيانات وهمية، يتطلب تجميع من الخلفية)</p>;
+        ) : <p className="text-center text-muted-foreground p-4">مثال لتقرير نشاط العملاء. (يتطلب تجميع بيانات متقدم من الخلفية)</p>;
+      case "average_order_value":
+        return averageOrderValueData.length > 0 ? (
+            <Card className="text-center p-6">
+                <CardTitle className="text-xl font-headline text-primary mb-2">متوسط قيمة الطلب</CardTitle>
+                <div className="text-4xl font-bold text-foreground">
+                    {averageOrderValueData[0].averageOrderValue.toFixed(2)} ر.س
+                </div>
+                <CardDescription className="mt-1">خلال الفترة المحددة</CardDescription>
+            </Card>
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات كافية لعرض متوسط قيمة الطلب للفترة المحددة.</p>;
       default:
         return (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -314,7 +363,7 @@ const FinancialReportsPage = () => {
             التقارير المالية والتحليلات
           </h1>
            <Button variant="outline" onClick={handleExportReport}>
-            <Download className="ml-2 h-4 w-4" /> تصدير الكل (وهمي)
+            <Download className="ml-2 h-4 w-4" /> تصدير التقرير الحالي
           </Button>
         </div>
 
@@ -381,7 +430,7 @@ const FinancialReportsPage = () => {
             {/* Filters below are UI only for now and don't affect Supabase fetched data directly without backend logic */}
             <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 border-t pt-4">
                 <div>
-                  <Label htmlFor="filterCategory">تصفية حسب الفئة (واجهة فقط)</Label>
+                  <Label htmlFor="filterCategory">تصفية حسب الفئة (تؤثر على تقرير حالة المخزون)</Label>
                   <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter} dir="rtl">
                     <SelectTrigger id="filterCategory" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الفئات" /></SelectTrigger>
                     <SelectContent><SelectItem value="">كل الفئات</SelectItem>{filterCategories.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
@@ -402,7 +451,7 @@ const FinancialReportsPage = () => {
                   </Select>
                 </div>
             </div>
-             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: خيارات التصفية المتقدمة (حسب الفئة، العميل، المورد) هي واجهة فقط حالياً. تفعيلها بشكل كامل يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية.</p>
+             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: خيارات التصفية المتقدمة (حسب العميل، المورد) هي واجهة فقط حالياً. تصفية الفئة تؤثر على تقرير حالة المخزون. تفعيل التصفية الكاملة يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية.</p>
           </CardContent>
         </Card>
 
@@ -413,6 +462,7 @@ const FinancialReportsPage = () => {
                 {reportType === "profit_loss" && <LineChartIcon className="ml-2 h-5 w-5 text-primary"/>}
                 {reportType === "inventory_status" && <Package className="ml-2 h-5 w-5 text-primary"/>}
                 {reportType === "customer_activity" && <Users className="ml-2 h-5 w-5 text-primary"/>}
+                {reportType === "average_order_value" && <DollarSign className="ml-2 h-5 w-5 text-primary"/>}
                 {!reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] && <FileText className="ml-2 h-5 w-5 text-primary"/>}
                 عرض التقرير: {reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || "الرجاء اختيار تقرير"}
             </CardTitle>
@@ -440,7 +490,7 @@ const FinancialReportsPage = () => {
                 id="reportTextAi"
                 value={reportText}
                 onChange={(e) => setReportText(e.target.value)}
-                placeholder="مثال: 'بلغ صافي الدخل للربع الأول 150,000 ل.س مع إجمالي أصول 1.2 مليون ل.س...'"
+                placeholder="مثال: 'بلغ صافي الدخل للربع الأول 150,000 ر.س مع إجمالي أصول 1.2 مليون ر.س...'"
                 rows={6}
                 className="mt-2 bg-input/50 focus:bg-input resize-y"
               />

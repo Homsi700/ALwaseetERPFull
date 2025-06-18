@@ -56,7 +56,7 @@ const mapToSupabaseClient = (client: Omit<Client, 'id' | 'created_at'> & { id?: 
   join_date: client.join_date || new Date().toISOString().split('T')[0],
   address: client.address,
   notes: client.notes,
-  tags: client.tags || [],
+  tags: client.tags || [], // Ensure tags is always an array
   credit_balance: client.credit_balance || 0,
 });
 
@@ -93,7 +93,10 @@ const ClientsPage = () => {
     if(!user) return;
     setIsLoadingClients(true);
     try {
-      const { data, error } = await supabase.from('clients').select('*').order('name', { ascending: true });
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('name', { ascending: true });
       if (error) throw error;
       setClients(data.map(mapFromSupabaseClient));
     } catch (error: any) {
@@ -112,6 +115,7 @@ const ClientsPage = () => {
     setIsLoadingClientHistory(true);
     setClientPurchaseHistory([]);
     try {
+      // Fetch sales for the client
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select(`
@@ -127,10 +131,10 @@ const ClientsPage = () => {
 
       const history: Purchase[] = salesData.map((sale: any) => ({
         id: sale.id,
-        invoiceNumber: `INV-${sale.id.substring(0, 6)}`,
+        invoiceNumber: `INV-${sale.id.substring(0, 6)}`, // Simple invoice number generation
         date: sale.sale_date,
         items: sale.sale_items.map((item: any) => ({
-          name: item.products?.name || 'منتج غير معروف',
+          name: item.products?.name || 'منتج غير معروف', // product_id needs to link to a products table with a name
           quantity: item.quantity,
           price: item.unit_price,
         })),
@@ -161,7 +165,7 @@ const ClientsPage = () => {
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       client.phone.includes(searchTerm)
-    ).sort((a,b) => new Date(b.join_date || 0).getTime() - new Date(a.join_date || 0).getTime()),
+    ).sort((a,b) => new Date(b.join_date || 0).getTime() - new Date(a.join_date || 0).getTime()), // Sort by join date descending
     [clients, searchTerm]
   );
 
@@ -183,12 +187,14 @@ const ClientsPage = () => {
   const handleSaveClient = async (clientData: Omit<Client, 'id' | 'created_at'> & { id?: string }) => {
     const dataToSave = mapToSupabaseClient(clientData);
     try {
-        if (editingClient) {
+        if (editingClient && editingClient.id) {
             const { error } = await supabase.from('clients').update(dataToSave).eq('id', editingClient.id);
             if (error) throw error;
             toast({ title: 'تم تحديث العميل'});
         } else {
-            const { error } = await supabase.from('clients').insert(dataToSave).select().single();
+            // Remove id field for insert if it exists from editingClient being undefined
+            const { id, ...insertData } = dataToSave;
+            const { error } = await supabase.from('clients').insert(insertData).select().single();
             if (error) throw error;
             toast({ title: 'تمت إضافة عميل'});
         }

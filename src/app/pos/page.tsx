@@ -307,19 +307,38 @@ const PosPage = () => {
       if (saleItemsError) throw saleItemsError;
 
       // 3. Update product stock
-      // Consider using a Supabase function for atomicity of stock updates and sale creation.
       const stockUpdatePromises = cart.map(async (item) => {
-        if (!isProductWeighable(item)) { // Only update stock for non-weighable items for now
-          const newStock = item.stock - item.itemQuantityInCart;
-          const { error: stockUpdateError } = await supabase
+        // For weighable items, stock is often managed differently (e.g., not discrete units, or updated periodically)
+        // For simplicity, we'll assume stock for weighable items is also reduced, but by '1 unit' of transaction not by weight.
+        // This needs careful consideration based on business logic.
+        // For now, let's assume we are reducing stock of non-weighable items by itemQuantityInCart
+        // and weighable items by 1 (representing one transaction of that weighed item).
+        // A more robust system might not even track 'stock' for items sold by weight in the same way.
+
+        const currentProduct = await supabase.from('products').select('stock').eq('id', item.id).single();
+        if (currentProduct.error || !currentProduct.data) {
+            throw new Error(`فشل في جلب المخزون الحالي لـ ${item.name}.`);
+        }
+        
+        let quantityToDeduct = item.itemQuantityInCart;
+        // If it's a weighed item, and stock represents something like 'number of available batches' or is not directly reduced by grams/kg,
+        // this logic would need to change. For now, we assume stock is in the same unit as sale for non-weighed.
+        // For weighed items, if 'stock' means total KGs available, then itemQuantityInCart (which is weight) is correct to deduct.
+
+        const newStock = currentProduct.data.stock - quantityToDeduct;
+        if (newStock < 0) {
+            // This check ideally should happen before confirming the sale too, or handled by DB constraints.
+            toast({ title: "خطأ في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع.`, variant: "destructive" });
+            throw new Error(`نفذ مخزون ${item.name}.`);
+        }
+
+        const { error: stockUpdateError } = await supabase
             .from('products')
             .update({ stock: newStock })
             .eq('id', item.id);
-          if (stockUpdateError) {
+        if (stockUpdateError) {
             console.error(`Error updating stock for ${item.name}:`, stockUpdateError);
-            // TODO: Handle potential rollback or notification if a stock update fails
             throw new Error(`فشل تحديث مخزون ${item.name}.`);
-          }
         }
       });
 

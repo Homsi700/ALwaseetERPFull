@@ -17,7 +17,7 @@ import { useRouter } from 'next/navigation';
 // Helper function to map JS object to Supabase snake_case
 const mapToSupabaseProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & { id?: string; created_at?: string }) => {
   return {
-    id: productData.id, // Let Supabase handle ID generation for new products
+    id: productData.id, 
     name: productData.name,
     description: productData.description,
     unit: productData.unit,
@@ -30,7 +30,6 @@ const mapToSupabaseProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & 
     category: productData.category,
     image_url: productData.image || null,
     data_ai_hint: `${productData.category.split(" ")[0] || ""} ${productData.name.split(" ")[0] || ""}`.toLowerCase().trim(),
-    // created_at will be handled by Supabase
   };
 };
 
@@ -50,7 +49,6 @@ const mapFromSupabaseProduct = (supabaseProduct: any): Product => {
     category: supabaseProduct.category,
     image: supabaseProduct.image_url,
     dataAiHint: supabaseProduct.data_ai_hint,
-    // created_at: supabaseProduct.created_at, // if needed
   };
 };
 
@@ -114,7 +112,8 @@ const ProductsPage = () => {
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
-      setProducts(prevProducts => prevProducts.filter(p => p.id !== productId));
+      // setProducts(prevProducts => prevProducts.filter(p => p.id !== productId)); // Optimistic update
+      await fetchProducts(); // Re-fetch to ensure data consistency
       toast({
         title: 'تم حذف المنتج',
         description: 'تمت إزالة المنتج من القائمة بنجاح.',
@@ -131,10 +130,9 @@ const ProductsPage = () => {
   const handleSaveProduct = async (productData: Omit<Product, 'id' | 'dataAiHint'> & { id?: string }) => {
     const productToSaveSupabase = mapToSupabaseProduct(productData);
     
-    // Remove id if it's for a new product, Supabase generates it
     const { id, ...dataForSupabase } = productToSaveSupabase;
 
-    if (editingProduct) { 
+    if (editingProduct && editingProduct.id) { 
       try {
         const { data: updatedProduct, error } = await supabase
           .from('products')
@@ -146,9 +144,8 @@ const ProductsPage = () => {
         if (error) throw error;
 
         if (updatedProduct) {
-            setProducts(prevProducts =>
-            prevProducts.map(p => (p.id === editingProduct.id ? mapFromSupabaseProduct(updatedProduct) : p))
-            );
+            // setProducts(prevProducts => prevProducts.map(p => (p.id === editingProduct.id ? mapFromSupabaseProduct(updatedProduct) : p))); // Optimistic
+            await fetchProducts(); // Re-fetch
             toast({
             title: 'تم تحديث المنتج',
             description: `تم تحديث بيانات المنتج "${updatedProduct.name}" بنجاح.`,
@@ -174,7 +171,8 @@ const ProductsPage = () => {
         if (error) throw error;
         
         if (newProductData) {
-            setProducts(prevProducts => [mapFromSupabaseProduct(newProductData), ...prevProducts]);
+            // setProducts(prevProducts => [mapFromSupabaseProduct(newProductData), ...prevProducts]); // Optimistic
+            await fetchProducts(); // Re-fetch
             toast({
             title: 'تمت إضافة منتج جديد',
             description: `تمت إضافة المنتج "${newProductData.name}" بنجاح.`,
@@ -254,3 +252,4 @@ const ProductsPage = () => {
 };
 
 export default ProductsPage;
+
