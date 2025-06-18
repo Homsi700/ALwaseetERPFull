@@ -19,9 +19,10 @@ import {
   SidebarNavLink,
   SidebarFooter,
   SidebarMobileDrawer,
+  useSidebarAlt, // Import useSidebarAlt
 } from '@/components/ui/sidebar-alt';
 import {
-  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, UsersRound
+  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, UsersRound, SettingsIcon
 } from 'lucide-react';
 
 interface NavItem {
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { href: '/clients', icon: Users, label: 'العملاء' },
   { href: '/users', icon: UsersRound, label: 'إدارة المستخدمين' },
   { href: '/reports', icon: FileText, label: 'التقارير المالية' },
+  { href: '/settings', icon: SettingsIcon, label: 'الإعدادات' },
 ];
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
@@ -59,6 +61,26 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     );
   }
 
+  const MobileNavContent = () => {
+    const { setIsOpen } = useSidebarAlt(); // Get setIsOpen from context
+    return (
+      <SidebarNavMain>
+        {navItems.map((item) => (
+          <SidebarNavLink
+            key={item.href}
+            href={item.href}
+            active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard' && item.href.length > 1 ? pathname.startsWith(item.href) : pathname === item.href)}
+            onClick={() => setIsOpen(false)} // Close sidebar on link click
+          >
+            <item.icon className="w-5 h-5 ml-3" />
+            {item.label}
+          </SidebarNavLink>
+        ))}
+      </SidebarNavMain>
+    );
+  };
+
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex flex-col">
@@ -71,32 +93,14 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           </div>
           <div className="flex items-center gap-4">
              <SidebarMobileDrawer trigger={<Menu className="h-6 w-6 text-primary md:hidden" />}>
-                <SidebarNavMain>
-                  {navItems.map((item) => (
-                    <SidebarNavLink 
-                      key={item.href} 
-                      href={item.href} 
-                      active={pathname === item.href || (pathname.startsWith(item.href) && item.href !== '/dashboard' && item.href.length > 1 ? pathname.startsWith(item.href) : pathname === item.href)}
-                      onClick={() => {
-                        const { setIsOpen } = useSidebarAlt(); // This won't work directly, need to get context or pass setter
-                        // Temporary fix: assume it closes, better to handle in SidebarMobileDrawer context
-                        if (typeof document !== 'undefined' && window.innerWidth < 768) {
-                           // Heuristic to close, ideally context driven
-                        }
-                      }}
-                    >
-                      <item.icon className="w-5 h-5 ml-3" />
-                      {item.label}
-                    </SidebarNavLink>
-                  ))}
-                </SidebarNavMain>
+                <MobileNavContent />
              </SidebarMobileDrawer>
             <span className="text-sm text-muted-foreground hidden sm:inline">مرحباً، {user.name}</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={`https://placehold.co/40x40.png?text=${user.name.charAt(0)}`} alt={user.name} data-ai-hint="person letter"/>
+                    <AvatarImage src={user.avatar || `https://placehold.co/40x40.png?text=${user.name.charAt(0)}`} alt={user.name} data-ai-hint="person letter"/>
                     <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                 </Button>

@@ -9,11 +9,12 @@ interface User {
   id: string;
   email: string;
   name: string;
+  avatar?: string; // Optional avatar URL
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, name?: string) => void;
+  login: (email: string, name?: string, avatar?: string) => void;
   logout: () => void;
   loading: boolean;
 }
@@ -33,8 +34,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (email: string, name: string = 'مستخدم تجريبي') => {
-    const demoUser: User = { id: '1', email, name };
+  const login = (email: string, name: string = 'مستخدم تجريبي', avatar?: string) => {
+    // In a real app, ID would come from the backend
+    const demoUser: User = { id: new Date().getTime().toString(), email, name, avatar };
     setUser(demoUser);
     localStorage.setItem('alwaseetUser', JSON.stringify(demoUser));
     router.push('/dashboard');
@@ -52,3 +54,5 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+
+    

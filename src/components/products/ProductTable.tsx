@@ -17,7 +17,9 @@ export interface Product {
   category: string;
   price: number;
   stock: number;
+  unit: string; // Added unit of measurement
   image?: string;
+  dataAiHint?: string;
 }
 
 interface ProductTableProps {
@@ -34,20 +36,21 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[80px]">الصورة</TableHead>
+              <TableHead className="w-[60px]">الصورة</TableHead>
               <TableHead>الاسم</TableHead>
               <TableHead>الفئة</TableHead>
               <TableHead className="text-left">السعر</TableHead>
               <TableHead className="text-left">المخزون</TableHead>
+              <TableHead>وحدة القياس</TableHead>
               <TableHead className="text-center">الحالة</TableHead>
-              <TableHead className="text-left">الإجراءات</TableHead>
+              <TableHead className="text-left w-[80px]">الإجراءات</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {products.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24">
-                  لا توجد منتجات.
+                <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                  لا توجد منتجات لعرضها. يرجى إضافة منتج جديد.
                 </TableCell>
               </TableRow>
             ) : (
@@ -55,18 +58,19 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
                 <TableRow key={product.id} className="hover:bg-muted/50 transition-colors">
                   <TableCell>
                     <Image 
-                      src={product.image || `https://placehold.co/100x100.png`} 
+                      src={product.image || `https://placehold.co/60x60.png?text=${product.name.charAt(0)}`} 
                       alt={product.name} 
                       width={40} 
                       height={40} 
                       className="rounded-md object-cover"
-                      data-ai-hint="product item"
+                      data-ai-hint={product.dataAiHint || "item object"}
                     />
                   </TableCell>
                   <TableCell className="font-medium text-foreground">{product.name}</TableCell>
                   <TableCell className="text-muted-foreground">{product.category}</TableCell>
                   <TableCell className="text-left text-muted-foreground">{product.price.toFixed(2)} ر.س</TableCell>
                   <TableCell className="text-left text-muted-foreground">{product.stock}</TableCell>
+                  <TableCell className="text-muted-foreground">{product.unit}</TableCell>
                   <TableCell className="text-center">
                     {product.stock > 20 ? (
                       <Badge variant="default" className="bg-green-500/20 text-green-700 hover:bg-green-500/30 border-green-500/30">متوفر</Badge>
@@ -106,3 +110,5 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
 };
 
 export default ProductTable;
+
+    
