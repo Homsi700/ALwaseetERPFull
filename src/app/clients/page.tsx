@@ -56,7 +56,7 @@ const mapToSupabaseClient = (client: Omit<Client, 'id' | 'created_at'> & { id?: 
   join_date: client.join_date || new Date().toISOString().split('T')[0],
   address: client.address,
   notes: client.notes,
-  tags: client.tags || [], // Ensure tags is always an array
+  tags: client.tags || [], 
   credit_balance: client.credit_balance || 0,
 });
 
@@ -115,7 +115,6 @@ const ClientsPage = () => {
     setIsLoadingClientHistory(true);
     setClientPurchaseHistory([]);
     try {
-      // Fetch sales for the client
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select(`
@@ -131,10 +130,10 @@ const ClientsPage = () => {
 
       const history: Purchase[] = salesData.map((sale: any) => ({
         id: sale.id,
-        invoiceNumber: `INV-${sale.id.substring(0, 6)}`, // Simple invoice number generation
+        invoiceNumber: `INV-${sale.id.substring(0, 6)}`, 
         date: sale.sale_date,
         items: sale.sale_items.map((item: any) => ({
-          name: item.products?.name || 'منتج غير معروف', // product_id needs to link to a products table with a name
+          name: item.products?.name || 'منتج غير معروف', 
           quantity: item.quantity,
           price: item.unit_price,
         })),
@@ -165,7 +164,7 @@ const ClientsPage = () => {
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       client.phone.includes(searchTerm)
-    ).sort((a,b) => new Date(b.join_date || 0).getTime() - new Date(a.join_date || 0).getTime()), // Sort by join date descending
+    ).sort((a,b) => new Date(b.join_date || 0).getTime() - new Date(a.join_date || 0).getTime()), 
     [clients, searchTerm]
   );
 
@@ -192,7 +191,6 @@ const ClientsPage = () => {
             if (error) throw error;
             toast({ title: 'تم تحديث العميل'});
         } else {
-            // Remove id field for insert if it exists from editingClient being undefined
             const { id, ...insertData } = dataToSave;
             const { error } = await supabase.from('clients').insert(insertData).select().single();
             if (error) throw error;
@@ -283,9 +281,9 @@ const ClientsPage = () => {
                       </TableCell>
                       <TableCell className="font-medium text-foreground">{client.name}</TableCell>
                       <TableCell className="text-muted-foreground text-sm"><div>{client.email || '-'}</div><div>{client.phone}</div></TableCell>
-                      <TableCell className="text-left text-muted-foreground">{(client.total_spent || 0).toFixed(2)} ر.س</TableCell>
+                      <TableCell className="text-left text-muted-foreground">{(client.total_spent || 0).toFixed(2)} ل.س</TableCell>
                       <TableCell className={`text-left font-medium ${client.credit_balance && client.credit_balance > 0 ? 'text-green-600' : client.credit_balance && client.credit_balance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                        {client.credit_balance ? client.credit_balance.toFixed(2) : '0.00'} ر.س
+                        {client.credit_balance ? client.credit_balance.toFixed(2) : '0.00'} ل.س
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{client.join_date ? new Date(client.join_date).toLocaleDateString('ar-EG') : '-'}</TableCell>
                       <TableCell className="text-left">
@@ -339,8 +337,8 @@ const ClientsPage = () => {
                         <h4 className="font-semibold text-muted-foreground mb-2">معلومات العميل</h4>
                         <div className="text-sm space-y-1">
                             <p><strong className="text-muted-foreground/80">تاريخ الانضمام:</strong> {selectedClient.join_date ? new Date(selectedClient.join_date).toLocaleDateString('ar-EG') : '-'}</p>
-                            <p><strong className="text-muted-foreground/80">إجمالي المنفق:</strong> <span className="font-semibold text-primary">{(selectedClient.total_spent || 0).toFixed(2)} ر.س</span></p>
-                            <p><strong className="text-muted-foreground/80">الرصيد الآجل:</strong> <span className={`font-semibold ${selectedClient.credit_balance && selectedClient.credit_balance > 0 ? 'text-green-600' : selectedClient.credit_balance && selectedClient.credit_balance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{(selectedClient.credit_balance || 0).toFixed(2)} ر.س</span></p>
+                            <p><strong className="text-muted-foreground/80">إجمالي المنفق:</strong> <span className="font-semibold text-primary">{(selectedClient.total_spent || 0).toFixed(2)} ل.س</span></p>
+                            <p><strong className="text-muted-foreground/80">الرصيد الآجل:</strong> <span className={`font-semibold ${selectedClient.credit_balance && selectedClient.credit_balance > 0 ? 'text-green-600' : selectedClient.credit_balance && selectedClient.credit_balance < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{(selectedClient.credit_balance || 0).toFixed(2)} ل.س</span></p>
                             {selectedClient.notes && <p><strong className="text-muted-foreground/80">ملاحظات:</strong> {selectedClient.notes}</p>}
                         </div>
                     </div>
@@ -359,10 +357,10 @@ const ClientsPage = () => {
                                 </div>
                                 <ul className="text-xs list-disc list-inside pr-1 text-muted-foreground">
                                     {purchase.items.map(item => (
-                                    <li key={`${purchase.id}-${item.name}`}>{item.name} (×{item.quantity}) - {item.price.toFixed(2)} ر.س</li>
+                                    <li key={`${purchase.id}-${item.name}`}>{item.name} (×{item.quantity}) - {item.price.toFixed(2)} ل.س</li>
                                     ))}
                                 </ul>
-                                <p className="text-left text-sm font-semibold text-primary mt-1">الإجمالي: {purchase.total.toFixed(2)} ر.س</p>
+                                <p className="text-left text-sm font-semibold text-primary mt-1">الإجمالي: {purchase.total.toFixed(2)} ل.س</p>
                                 </li>
                             ))}
                             </ul>

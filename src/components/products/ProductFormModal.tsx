@@ -1,3 +1,4 @@
+
 // src/components/products/ProductFormModal.tsx
 "use client";
 
@@ -96,7 +97,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
           purchasePrice: 0,
           salePrice: 0,
           stock: 0,
-          minStockLevel: 5, // Default min stock level
+          minStockLevel: 5, 
           category: productCategoriesList[0],
           image: '',
         });
@@ -113,8 +114,10 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
   };
   
   const salePriceLabel = watchedProductType === 'منتج موصول' 
-    ? `سعر البيع لكل ${watchedUnit || 'وحدة'}` 
-    : "سعر البيع";
+    ? `سعر البيع لكل ${watchedUnit || 'وحدة'} (ل.س)` 
+    : "سعر البيع (ل.س)";
+
+  const purchasePriceLabel = "سعر الشراء (ل.س)";
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -173,7 +176,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="purchasePrice" className="text-muted-foreground">سعر الشراء</Label>
+                  <Label htmlFor="purchasePrice" className="text-muted-foreground">{purchasePriceLabel}</Label>
                   <Controller name="purchasePrice" control={control} render={({ field }) => <Input id="purchasePrice" type="number" step="0.01" {...field} className="mt-1 bg-input/50 focus:bg-input"/>} />
                   {errors.purchasePrice && <p className="text-sm text-destructive mt-1">{errors.purchasePrice.message}</p>}
                 </div>

@@ -13,7 +13,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// Updated Product interface
 export interface Product {
   id: string;
   name: string;
@@ -23,7 +22,7 @@ export interface Product {
   productType: 'منتج بباركود' | 'منتج موصول' | 'منتج عادي';
   barcodeNumber?: string;
   purchasePrice: number;
-  salePrice: number; // For weighed products, this is price per unit (e.g., per KG)
+  salePrice: number; 
   stock: number;
   minStockLevel: number;
   image?: string;
@@ -42,8 +41,8 @@ interface ProductTableProps {
 
 const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all'); // Default to "all"
-  const [filterProductType, setFilterProductType] = useState('all'); // Default to "all"
+  const [filterCategory, setFilterCategory] = useState('all'); 
+  const [filterProductType, setFilterProductType] = useState('all'); 
 
   const ALL_FILTER_VALUE = "all"; 
 
@@ -127,9 +126,9 @@ const ProductTable: React.FC<ProductTableProps> = ({ products, onEdit, onDelete 
                   <TableCell className="text-muted-foreground">{product.category}</TableCell>
                   <TableCell className="text-muted-foreground">{product.productType}</TableCell>
                   <TableCell className="text-muted-foreground">{product.unit}</TableCell>
-                  <TableCell className="text-left text-muted-foreground">{product.purchasePrice.toFixed(2)} ر.س</TableCell>
+                  <TableCell className="text-left text-muted-foreground">{product.purchasePrice.toFixed(2)} ل.س</TableCell>
                   <TableCell className="text-left text-muted-foreground">
-                    {product.salePrice.toFixed(2)} ر.س
+                    {product.salePrice.toFixed(2)} ل.س
                     {product.productType === 'منتج موصول' && `/${product.unit}`}
                   </TableCell>
                   <TableCell className="text-left text-muted-foreground">{product.stock}</TableCell>

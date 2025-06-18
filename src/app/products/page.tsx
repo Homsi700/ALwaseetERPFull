@@ -14,7 +14,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
 
-// Helper function to map JS object to Supabase snake_case
 const mapToSupabaseProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & { id?: string; created_at?: string }) => {
   return {
     id: productData.id, 
@@ -28,12 +27,11 @@ const mapToSupabaseProduct = (productData: Omit<Product, 'id' | 'dataAiHint'> & 
     stock: productData.stock,
     min_stock_level: productData.minStockLevel,
     category: productData.category,
-    image_url: productData.image || null,
+    image_url: productData.image || `https://placehold.co/100x100.png?text=${encodeURIComponent(productData.name.charAt(0))}`,
     data_ai_hint: `${productData.category.split(" ")[0] || ""} ${productData.name.split(" ")[0] || ""}`.toLowerCase().trim(),
   };
 };
 
-// Helper function to map Supabase snake_case object to JS camelCase
 const mapFromSupabaseProduct = (supabaseProduct: any): Product => {
   return {
     id: supabaseProduct.id,
@@ -112,8 +110,7 @@ const ProductsPage = () => {
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
-      // setProducts(prevProducts => prevProducts.filter(p => p.id !== productId)); // Optimistic update
-      await fetchProducts(); // Re-fetch to ensure data consistency
+      await fetchProducts(); 
       toast({
         title: 'تم حذف المنتج',
         description: 'تمت إزالة المنتج من القائمة بنجاح.',
@@ -144,8 +141,7 @@ const ProductsPage = () => {
         if (error) throw error;
 
         if (updatedProduct) {
-            // setProducts(prevProducts => prevProducts.map(p => (p.id === editingProduct.id ? mapFromSupabaseProduct(updatedProduct) : p))); // Optimistic
-            await fetchProducts(); // Re-fetch
+            await fetchProducts(); 
             toast({
             title: 'تم تحديث المنتج',
             description: `تم تحديث بيانات المنتج "${updatedProduct.name}" بنجاح.`,
@@ -171,8 +167,7 @@ const ProductsPage = () => {
         if (error) throw error;
         
         if (newProductData) {
-            // setProducts(prevProducts => [mapFromSupabaseProduct(newProductData), ...prevProducts]); // Optimistic
-            await fetchProducts(); // Re-fetch
+            await fetchProducts(); 
             toast({
             title: 'تمت إضافة منتج جديد',
             description: `تمت إضافة المنتج "${newProductData.name}" بنجاح.`,

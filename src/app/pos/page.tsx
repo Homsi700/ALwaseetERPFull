@@ -276,13 +276,11 @@ const PosPage = () => {
     }
 
     try {
-      // 1. Create a sales record
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
-          // client_id: selectedClient?.id, // TODO: Implement client selection for sales
           total_amount: cartTotal,
-          payment_method: 'Cash', // TODO: Implement payment method selection
+          payment_method: 'Cash', 
           sale_date: new Date().toISOString(),
           user_id: user.id,
         })
@@ -294,7 +292,6 @@ const PosPage = () => {
 
       const saleId = saleData.id;
 
-      // 2. Create sale_items records
       const saleItemsToInsert = cart.map(item => ({
         sale_id: saleId,
         product_id: item.id,
@@ -306,49 +303,42 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
 
-      // 3. Update product stock
       const stockUpdatePromises = cart.map(async (item) => {
-        // For weighable items, stock is often managed differently (e.g., not discrete units, or updated periodically)
-        // For simplicity, we'll assume stock for weighable items is also reduced, but by '1 unit' of transaction not by weight.
-        // This needs careful consideration based on business logic.
-        // For now, let's assume we are reducing stock of non-weighable items by itemQuantityInCart
-        // and weighable items by 1 (representing one transaction of that weighed item).
-        // A more robust system might not even track 'stock' for items sold by weight in the same way.
-
         const currentProduct = await supabase.from('products').select('stock').eq('id', item.id).single();
         if (currentProduct.error || !currentProduct.data) {
+            toast({ title: "خطأ في المخزون", description: `فشل في جلب المخزون الحالي لـ ${item.name}. البيع لم يكتمل لبعض المنتجات.`, variant: "destructive" });
             throw new Error(`فشل في جلب المخزون الحالي لـ ${item.name}.`);
         }
         
         let quantityToDeduct = item.itemQuantityInCart;
-        // If it's a weighed item, and stock represents something like 'number of available batches' or is not directly reduced by grams/kg,
-        // this logic would need to change. For now, we assume stock is in the same unit as sale for non-weighed.
-        // For weighed items, if 'stock' means total KGs available, then itemQuantityInCart (which is weight) is correct to deduct.
-
         const newStock = currentProduct.data.stock - quantityToDeduct;
-        if (newStock < 0) {
-            // This check ideally should happen before confirming the sale too, or handled by DB constraints.
-            toast({ title: "خطأ في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع.`, variant: "destructive" });
-            throw new Error(`نفذ مخزون ${item.name}.`);
-        }
 
-        const { error: stockUpdateError } = await supabase
-            .from('products')
-            .update({ stock: newStock })
-            .eq('id', item.id);
-        if (stockUpdateError) {
-            console.error(`Error updating stock for ${item.name}:`, stockUpdateError);
-            throw new Error(`فشل تحديث مخزون ${item.name}.`);
+        if (newStock < 0) {
+            toast({ title: "خطأ في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع. تم بيع ${currentProduct.data.stock} فقط.`, variant: "destructive" });
+            // Adjust quantity in sale_items for this item if possible (complex, requires update after insert)
+            // For now, we proceed but the stock update will fail or set to 0 based on DB constraints.
+            // A better approach is pre-sale stock check and reservation.
+            const { error: stockUpdateError } = await supabase
+                .from('products')
+                .update({ stock: 0 }) // Set to 0 if goes negative
+                .eq('id', item.id);
+            if (stockUpdateError) throw stockUpdateError;
+        } else {
+            const { error: stockUpdateError } = await supabase
+                .from('products')
+                .update({ stock: newStock })
+                .eq('id', item.id);
+            if (stockUpdateError) throw stockUpdateError;
         }
       });
 
       await Promise.all(stockUpdatePromises);
       
-      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. تم تحديث المخزون وتسجيل البيع.` });
+      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تحديث المخزون وتسجيل البيع.` });
       setCart([]); 
       setSelectedDirectWeighProduct(null);
       setDirectWeightInput('');
-      fetchProducts(); // Re-fetch products to update stock display
+      fetchProducts(); 
     } catch (error: any) {
       toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع أو تحديث المخزون.", variant: "destructive"});
     }
@@ -418,7 +408,7 @@ const PosPage = () => {
                       </SelectTrigger>
                       <SelectContent>
                         {weighableProductsForSelect.length > 0 ? weighableProductsForSelect.map(p => (
-                          <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ر.س/{p.unit})</SelectItem>
+                          <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ل.س/{p.unit})</SelectItem>
                         )) : <SelectItem value="no-weighable-products" disabled>لا توجد منتجات موزونة متاحة</SelectItem>}
                       </SelectContent>
                     </Select>
@@ -474,7 +464,7 @@ const PosPage = () => {
                         )}
                         <Image src={product.image || `https://placehold.co/40x40.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint={product.dataAiHint || "item product"} />
                         <span className="text-xs leading-tight">{product.name}</span>
-                        <span className="text-xs font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ر.س/{product.unit}</span>
+                        <span className="text-xs font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ل.س/{product.unit}</span>
                       </Button>
                     ))}
                   </div>
@@ -514,7 +504,7 @@ const PosPage = () => {
                             <Image src={item.image || `https://placehold.co/32x32.png?text=${encodeURIComponent(item.name.charAt(0))}`} alt={item.name} width={32} height={32} className="ml-3 rounded object-cover" data-ai-hint={item.dataAiHint || "item product"}/>
                             <div>
                               <p className="font-medium text-foreground">{item.name}</p>
-                              <p className="text-xs text-muted-foreground">{item.pricePerUnit.toFixed(2)} ر.س لل{item.unit}</p>
+                              <p className="text-xs text-muted-foreground">{item.pricePerUnit.toFixed(2)} ل.س لل{item.unit}</p>
                             </div>
                           </div>
                         </TableCell>
@@ -546,7 +536,7 @@ const PosPage = () => {
                            <span className="text-xs text-muted-foreground block mt-1">(المخزون: {item.stock} {item.unit})</span>
                         </TableCell>
                         <TableCell className="text-left font-semibold text-foreground">
-                          {item.totalItemPrice.toFixed(2)} ر.س
+                          {item.totalItemPrice.toFixed(2)} ل.س
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/80" onClick={() => removeFromCart(item.id, item.isWeighed)}>
@@ -564,7 +554,7 @@ const PosPage = () => {
           <CardFooter className="flex-shrink-0 p-4 md:p-6 space-y-4">
             <div className="flex justify-between items-center text-xl font-semibold">
               <span className="text-muted-foreground">الإجمالي:</span>
-              <span className="font-headline text-primary">{cartTotal.toFixed(2)} ر.س</span>
+              <span className="font-headline text-primary">{cartTotal.toFixed(2)} ل.س</span>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
                 <Button variant="outline" className="flex-1 text-sm">
@@ -602,7 +592,7 @@ const PosPage = () => {
                         <Image src={productToWeigh.image || `https://placehold.co/40x40.png?text=${encodeURIComponent(productToWeigh.name.charAt(0))}`} alt={productToWeigh.name} width={40} height={40} className="rounded" data-ai-hint={productToWeigh.dataAiHint || "item product"}/>
                         <div>
                             <p className="font-medium text-lg">{productToWeigh.name}</p>
-                            <p className="text-sm text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ر.س / {productToWeigh.unit}</p>
+                            <p className="text-sm text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ل.س / {productToWeigh.unit}</p>
                         </div>
                     </div>
                     <div>
@@ -620,7 +610,7 @@ const PosPage = () => {
                     {parseFloat(weightInputValue) > 0 && (
                          <div className="p-3 bg-primary/10 rounded-md text-center">
                             <p className="text-sm text-muted-foreground">السعر المحسوب</p>
-                            <p className="text-2xl font-semibold text-primary">{calculatedPriceForWeight.toFixed(2)} ر.س</p>
+                            <p className="text-2xl font-semibold text-primary">{calculatedPriceForWeight.toFixed(2)} ل.س</p>
                         </div>
                     )}
                 </div>

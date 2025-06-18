@@ -19,31 +19,31 @@ import { format } from "date-fns";
 import { arSA } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line, PieChart } from 'recharts'; // Added PieChart
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line, PieChart as RechartsPieChart } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 
 const MOCK_PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 const chartConfig = {
-  sales: { label: "المبيعات (ر.س)", color: "hsl(var(--chart-1))" },
-  profit: { label: "الأرباح (ر.س)", color: "hsl(var(--chart-2))" }, 
-  costs: { label: "التكاليف (ر.س)", color: "hsl(var(--chart-3))" }, 
-  revenue: { label: "الإيرادات (ر.س)", color: "hsl(var(--chart-1))" }, 
-  cogs: { label: "تكلفة البضاعة المباعة (ر.س)", color: "hsl(var(--chart-2))" }, 
-  expenses: { label: "المصروفات (ر.س)", color: "hsl(var(--chart-4))" }, 
-  netProfit: { label: "صافي الربح (ر.س)", color: "hsl(var(--chart-5))" }, 
-  inventoryValue: { label: "قيمة المخزون (ر.س)", color: "hsl(var(--chart-1))"},
+  sales: { label: "المبيعات (ل.س)", color: "hsl(var(--chart-1))" },
+  profit: { label: "الأرباح (ل.س)", color: "hsl(var(--chart-2))" }, 
+  costs: { label: "التكاليف (ل.س)", color: "hsl(var(--chart-3))" }, 
+  revenue: { label: "الإيرادات (ل.س)", color: "hsl(var(--chart-1))" }, 
+  cogs: { label: "تكلفة البضاعة المباعة (ل.س)", color: "hsl(var(--chart-2))" }, 
+  expenses: { label: "المصروفات (ل.س)", color: "hsl(var(--chart-4))" }, 
+  netProfit: { label: "صافي الربح (ل.س)", color: "hsl(var(--chart-5))" }, 
+  inventoryValue: { label: "قيمة المخزون (ل.س)", color: "hsl(var(--chart-1))"},
   products: { label: "عدد المنتجات", color: "hsl(var(--chart-3))" }, 
   newCustomers: { label: "عملاء جدد", color: "hsl(var(--chart-1))"}, 
   activeCustomers: { label: "عملاء نشطون", color: "hsl(var(--chart-2))"}, 
   productCategory: {label: "فئة المنتج", color: "hsl(var(--chart-3))"},
-  averageOrderValue: { label: "متوسط قيمة الطلب (ر.س)", color: "hsl(var(--chart-4))"},
+  averageOrderValue: { label: "متوسط قيمة الطلب (ل.س)", color: "hsl(var(--chart-4))"},
 } satisfies React.ComponentProps<typeof ChartContainer>["config"];
 
 interface SalesSummaryData { name: string; sales: number; } 
 interface ProfitLossData { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; } 
-interface InventoryStatusData { name: string; products: number; } // Count products by category
+interface InventoryStatusData { name: string; products: number; } 
 interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; } 
 interface AverageOrderValueData { name: string; averageOrderValue: number; }
 
@@ -58,7 +58,7 @@ const FinancialReportsPage = () => {
   const { user } = useAuth();
 
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth() -1 , 1), // Default to last month
+    from: new Date(new Date().getFullYear(), new Date().getMonth() -1 , 1), 
     to: new Date(),
   });
   const [reportType, setReportType] = useState<string>("sales_summary");
@@ -113,9 +113,7 @@ const FinancialReportsPage = () => {
         let query = supabase.from('sales').select('sale_date, total_amount');
         if (dateRange?.from) query = query.gte('sale_date', fromDate);
         if (dateRange?.to) query = query.lte('sale_date', toDate);
-        // Add client/supplier/category filters here if needed and if sales table supports them directly
-        // For now, filters are UI only for sales summary.
-
+        
         const { data, error } = await query;
         if (error) throw error;
 
@@ -143,7 +141,6 @@ const FinancialReportsPage = () => {
     } else if (reportType === "inventory_status") {
        try {
         let query = supabase.from('products').select('category, id');
-        // Category filter can be applied here if selectedCategoryFilter is not empty
         if (selectedCategoryFilter) {
             query = query.eq('category', selectedCategoryFilter);
         }
@@ -186,8 +183,6 @@ const FinancialReportsPage = () => {
             setAverageOrderValueData([]);
         }
     } else {
-        // For other report types like profit_loss or customer_activity, advanced backend aggregation is needed.
-        // We'll clear/mock these for now.
         setProfitLossData([ 
             { month: 'يناير', revenue: 5000, cogs: 2000, expenses: 1000, netProfit: 2000 },
             { month: 'فبراير', revenue: 6000, cogs: 2500, expenses: 1200, netProfit: 2300 },
@@ -242,8 +237,6 @@ const FinancialReportsPage = () => {
   const handleExportReport = () => {
     toast({ title: "بدء تصدير التقرير", description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...` });
     setTimeout(() => {
-      // Actual export logic would go here, e.g., generating a CSV or PDF.
-      // For now, it's a mock.
       const dataToExport = reportType === "sales_summary" ? salesSummaryData : reportType === "inventory_status" ? inventoryStatusData : [];
       if (dataToExport.length > 0) {
         const csvContent = "data:text/csv;charset=utf-8," 
@@ -307,7 +300,7 @@ const FinancialReportsPage = () => {
       case "inventory_status":
         return inventoryStatusData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
-            <PieChart>
+            <RechartsPieChart>
               <Tooltip content={<ChartTooltipContent nameKey="name" />} />
               <Pie data={inventoryStatusData} dataKey="products" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
                  {inventoryStatusData.map((entry, index) => (
@@ -315,7 +308,7 @@ const FinancialReportsPage = () => {
                  ))}
               </Pie>
               <Legend content={<ChartLegendContent nameKey="name" />} />
-            </PieChart>
+            </RechartsPieChart>
           </ChartContainer>
         ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون (حسب الفئة).</p>;
       case "customer_activity":
@@ -337,7 +330,7 @@ const FinancialReportsPage = () => {
             <Card className="text-center p-6">
                 <CardTitle className="text-xl font-headline text-primary mb-2">متوسط قيمة الطلب</CardTitle>
                 <div className="text-4xl font-bold text-foreground">
-                    {averageOrderValueData[0].averageOrderValue.toFixed(2)} ر.س
+                    {averageOrderValueData[0].averageOrderValue.toFixed(2)} ل.س
                 </div>
                 <CardDescription className="mt-1">خلال الفترة المحددة</CardDescription>
             </Card>
@@ -427,7 +420,6 @@ const FinancialReportsPage = () => {
             <Button onClick={fetchReportData} className="bg-primary hover:bg-primary/90 text-primary-foreground md:mt-0 mt-4 md:col-span-1 lg:col-span-1 self-end" disabled={isLoadingReportData}>
               {isLoadingReportData ? "جاري التحميل..." : "تطبيق وعرض التقرير"}
             </Button>
-            {/* Filters below are UI only for now and don't affect Supabase fetched data directly without backend logic */}
             <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 border-t pt-4">
                 <div>
                   <Label htmlFor="filterCategory">تصفية حسب الفئة (تؤثر على تقرير حالة المخزون)</Label>
@@ -490,7 +482,7 @@ const FinancialReportsPage = () => {
                 id="reportTextAi"
                 value={reportText}
                 onChange={(e) => setReportText(e.target.value)}
-                placeholder="مثال: 'بلغ صافي الدخل للربع الأول 150,000 ر.س مع إجمالي أصول 1.2 مليون ر.س...'"
+                placeholder="مثال: 'بلغ صافي الدخل للربع الأول 150,000 ل.س مع إجمالي أصول 1.2 مليون ل.س...'"
                 rows={6}
                 className="mt-2 bg-input/50 focus:bg-input resize-y"
               />
