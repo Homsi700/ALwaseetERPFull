@@ -6,7 +6,7 @@ import * as React from "react"
 import Link, { LinkProps } from "next/link"
 import { cn } from "@/lib/utils"
 import { Button, ButtonProps } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetHeader as UiSheetHeader, SheetTitle as UiSheetTitle } from "@/components/ui/sheet";
 import { Building } from "lucide-react";
 
 
@@ -229,18 +229,20 @@ export function SidebarMobileDrawer({ children, trigger }: { children: React.Rea
         {trigger}
       </SheetTrigger>
       <SheetContent side="right" className="w-64 bg-sidebar text-sidebar-foreground p-0 border-l border-sidebar-border flex flex-col">
-         <SidebarHeader>
-            <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setIsSheetOpen(false)}>
-               <Building className="h-7 w-7 text-sidebar-primary" />
-              <h1 className="text-xl font-headline font-semibold text-sidebar-primary">الوسيط</h1>
-            </Link>
-          </SidebarHeader>
-        <SidebarMain>
+         <UiSheetHeader className="p-4 border-b border-sidebar-border">
+            <UiSheetTitle>
+                <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setIsSheetOpen(false)}>
+                   <Building className="h-7 w-7 text-sidebar-primary" />
+                  <span className="text-xl font-headline font-semibold text-sidebar-primary">الوسيط</span>
+                </Link>
+            </UiSheetTitle>
+          </UiSheetHeader>
+        <SidebarMain className="flex-1 overflow-y-auto py-4">
             <SidebarNav>
                 {children}
             </SidebarNav>
         </SidebarMain>
-        <SidebarFooter>
+        <SidebarFooter className="p-4">
         </SidebarFooter>
       </SheetContent>
     </Sheet>
