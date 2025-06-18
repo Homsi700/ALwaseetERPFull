@@ -17,6 +17,7 @@ import type { Product as BaseProduct } from '@/components/products/ProductTable'
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Define Product type specifically for POS, clarifying price is per unit
 interface Product extends Omit<BaseProduct, 'price'> {
@@ -48,23 +49,33 @@ const PosPage = () => {
 
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [productToWeigh, setProductToWeigh] = useState<Product | null>(null);
-  const [weightInputValue, setWeightInputValue] = useState('');
+  const [weightInputValue, setWeightInputValue] = useState(''); // For modal
   const [calculatedPriceForWeight, setCalculatedPriceForWeight] = useState(0);
+
+  // New state for direct weighable product entry
+  const [selectedDirectWeighProduct, setSelectedDirectWeighProduct] = useState<Product | null>(null);
+  const [directWeightInput, setDirectWeightInput] = useState('');
+
 
   const isProductWeighable = (product: Product): boolean => {
     return product.unit.toLowerCase() === 'كيلو' || product.unit.toLowerCase() === 'غرام';
   };
 
+  const weighableProductsForSelect = useMemo(() => 
+    initialAvailableProducts.filter(p => isProductWeighable(p)),
+    []
+  );
+
   const filteredProducts = useMemo(() => 
     initialAvailableProducts.filter(p => 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (!isProductWeighable(p) || !cart.find(item => item.id === p.id && item.isWeighed)) // Allow weighable to be re-added/edited from cart directly
+      (!isProductWeighable(p) || !cart.find(item => item.id === p.id && item.isWeighed)) 
     ),
     [searchTerm, cart] 
   );
 
   const handleProductSelection = useCallback((product: Product) => {
-    if (product.stock === 0 && !isProductWeighable(product)) { // Allow weighable items to be selected even if stock is 0, assuming it's for items cut to order. This can be adjusted.
+    if (product.stock === 0 && !isProductWeighable(product)) { 
         toast({ title: "نفذ المخزون", description: `عفواً، ${product.name} غير متوفر حالياً.`, variant: "destructive" });
         return;
     }
@@ -76,7 +87,6 @@ const PosPage = () => {
       setCalculatedPriceForWeight(existingCartItem ? existingCartItem.totalItemPrice : 0);
       setIsWeightModalOpen(true);
     } else {
-      // Handle non-weighable product
       const existingItemIndex = cart.findIndex(item => item.id === product.id && !item.isWeighed);
       if (existingItemIndex > -1) {
         const updatedCart = [...cart];
@@ -119,7 +129,7 @@ const PosPage = () => {
     }
   }, [productToWeigh, weightInputValue]);
 
-  const handleAddOrUpdateWeighedProduct = () => {
+  const handleAddOrUpdateWeighedProduct = () => { // This is for the MODAL flow
     if (!productToWeigh || !weightInputValue) return;
     const weight = parseFloat(weightInputValue);
 
@@ -128,15 +138,8 @@ const PosPage = () => {
       return;
     }
     
-    // Optional: Check stock for weighable items if productToWeigh.stock represents weighable stock
-    // if (productToWeigh.stock < weight) {
-    //   toast({ title: "تنبيه المخزون", description: `الكمية المطلوبة من ${productToWeigh.name} (${weight} ${productToWeigh.unit}) تتجاوز المخزون المتوفر (${productToWeigh.stock} ${productToWeigh.unit}).`, variant: "destructive" });
-    //   return;
-    // }
-
     const existingItemIndex = cart.findIndex(item => item.id === productToWeigh.id && item.isWeighed);
     if (existingItemIndex > -1) {
-      // Update existing weighed item
       const updatedCart = [...cart];
       updatedCart[existingItemIndex] = {
         ...updatedCart[existingItemIndex],
@@ -146,7 +149,6 @@ const PosPage = () => {
       setCart(updatedCart);
       toast({ title: "تم تحديث المنتج", description: `تم تحديث وزن ${productToWeigh.name} إلى ${weight} ${productToWeigh.unit}.` });
     } else {
-      // Add new weighed item
       setCart([...cart, {
         ...productToWeigh,
         itemQuantityInCart: weight,
@@ -159,6 +161,39 @@ const PosPage = () => {
     setProductToWeigh(null);
     setWeightInputValue('');
   };
+
+  const handleDirectAddWeighedProduct = () => {
+    if (!selectedDirectWeighProduct || !directWeightInput) return;
+    const weight = parseFloat(directWeightInput);
+  
+    if (isNaN(weight) || weight <= 0) {
+      toast({ title: "خطأ في الإدخال", description: "يرجى إدخال وزن صحيح للمنتج.", variant: "destructive" });
+      return;
+    }
+  
+    const existingItemIndex = cart.findIndex(item => item.id === selectedDirectWeighProduct.id && item.isWeighed);
+    if (existingItemIndex > -1) {
+      const updatedCart = [...cart];
+      updatedCart[existingItemIndex] = {
+        ...updatedCart[existingItemIndex],
+        itemQuantityInCart: weight, 
+        totalItemPrice: selectedDirectWeighProduct.pricePerUnit * weight,
+      };
+      setCart(updatedCart);
+      toast({ title: "تم تحديث وزن المنتج", description: `تم تحديث وزن ${selectedDirectWeighProduct.name} في السلة إلى ${weight} ${selectedDirectWeighProduct.unit}.` });
+    } else {
+      setCart([...cart, {
+        ...selectedDirectWeighProduct,
+        itemQuantityInCart: weight,
+        totalItemPrice: selectedDirectWeighProduct.pricePerUnit * weight,
+        isWeighed: true,
+      }]);
+      toast({ title: "تمت إضافة المنتج", description: `${selectedDirectWeighProduct.name} (${weight} ${selectedDirectWeighProduct.unit}) أضيف إلى السلة.` });
+    }
+  
+    setSelectedDirectWeighProduct(null);
+    setDirectWeightInput('');
+  };
   
   const updateCartItemQuantity = useCallback((productId: string, newQuantityValue: number | string) => {
     const newQuantity = Number(newQuantityValue);
@@ -170,7 +205,7 @@ const PosPage = () => {
     const item = updatedCart[itemIndex];
 
     if (newQuantity <= 0) {
-      updatedCart.splice(itemIndex, 1); // Remove item if quantity is 0 or less
+      updatedCart.splice(itemIndex, 1); 
     } else if (newQuantity > item.stock) {
       updatedCart[itemIndex] = { ...item, itemQuantityInCart: item.stock, totalItemPrice: item.pricePerUnit * item.stock };
       toast({ title: "تنبيه المخزون", description: `الكمية القصوى المتوفرة لـ ${item.name} هي ${item.stock}.`, variant: "destructive" });
@@ -198,6 +233,8 @@ const PosPage = () => {
     }
     toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ر.س. شكراً لك!` });
     setCart([]); 
+    setSelectedDirectWeighProduct(null);
+    setDirectWeightInput('');
   };
 
   return (
@@ -207,28 +244,81 @@ const PosPage = () => {
         <div className="lg:w-2/5 flex flex-col gap-4">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-foreground">بحث عن منتج</CardTitle>
+              <CardTitle className="font-headline text-xl text-foreground">بحث وإضافة منتجات</CardTitle>
             </CardHeader>
-            <CardContent className="flex gap-2">
-              <div className="relative flex-grow">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input 
-                  type="text" 
-                  placeholder="ابحث عن منتجات أو امسح الباركود..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pr-10 bg-input/50 focus:bg-input"
-                />
+            <CardContent className="flex flex-col gap-4">
+              {/* Existing Search Row */}
+              <div className="flex gap-2">
+                <div className="relative flex-grow">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input 
+                    type="text" 
+                    placeholder="ابحث بالاسم أو امسح الباركود..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pr-10 bg-input/50 focus:bg-input"
+                  />
+                </div>
+                <Button variant="outline" size="icon" className="shrink-0">
+                  <QrCode className="h-5 w-5" />
+                </Button>
               </div>
-              <Button variant="outline" size="icon" className="shrink-0">
-                <QrCode className="h-5 w-5" />
-              </Button>
+
+              <Separator /> 
+              
+              {/* New Direct Weighable Product Section */}
+              <div>
+                <h3 className="text-md font-semibold mb-2 text-muted-foreground">إضافة سريعة لمنتج بالوزن:</h3>
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="direct-weigh-product-select">اختر منتجًا</Label>
+                    <Select
+                      value={selectedDirectWeighProduct?.id || ""}
+                      onValueChange={(productId) => {
+                        const product = initialAvailableProducts.find(p => p.id === productId);
+                        setSelectedDirectWeighProduct(product || null);
+                      }}
+                      dir="rtl"
+                    >
+                      <SelectTrigger id="direct-weigh-product-select" className="mt-1 bg-input/50 focus:bg-input">
+                        <SelectValue placeholder="اختر منتجًا للوزن..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {weighableProductsForSelect.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ر.س/{p.unit})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="direct-weight-input">الوزن (بالكيلو)</Label>
+                    <Input
+                      id="direct-weight-input"
+                      type="number"
+                      value={directWeightInput}
+                      onChange={(e) => setDirectWeightInput(e.target.value)}
+                      placeholder="مثال: 0.250"
+                      className="mt-1 bg-input/50 focus:bg-input"
+                      step="0.001"
+                      disabled={!selectedDirectWeighProduct}
+                    />
+                     <p className="text-xs text-muted-foreground mt-1">ادخل الوزن بالكيلو، مثال: 0.2 لـ 200 غرام, 1.4 لـ 1400 غرام.</p>
+                  </div>
+                  <Button
+                    onClick={handleDirectAddWeighedProduct}
+                    disabled={!selectedDirectWeighProduct || !directWeightInput || parseFloat(directWeightInput) <= 0}
+                    className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+                  >
+                    <Plus className="ml-2 h-4 w-4" /> إضافة المنتج الموزون للسلة
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-lg flex-1 flex flex-col min-h-0">
             <CardHeader>
-              <CardTitle className="font-headline text-xl text-foreground">إضافة سريعة</CardTitle>
+              <CardTitle className="font-headline text-xl text-foreground">قائمة المنتجات (إضافة سريعة)</CardTitle>
             </CardHeader>
             <CardContent className="flex-1 p-3 overflow-hidden">
               <ScrollArea className="h-full pr-3">
@@ -245,7 +335,7 @@ const PosPage = () => {
                         {product.stock === 0 && !isProductWeighable(product) && (
                             <Badge variant="destructive" className="absolute top-1 right-1 text-xs px-1 py-0.5">نفذ</Badge>
                         )}
-                        <Image src={product.image!} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint="item product" />
+                        <Image src={product.image!} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint={product.dataAiHint || "item product"} />
                         <span className="text-xs leading-tight">{product.name}</span>
                         <span className="text-xs font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ر.س/{product.unit}</span>
                       </Button>
@@ -285,7 +375,7 @@ const PosPage = () => {
                       <TableRow key={`${item.id}-${item.isWeighed}`}>
                         <TableCell>
                           <div className="flex items-center">
-                            <Image src={item.image!} alt={item.name} width={32} height={32} className="ml-3 rounded object-cover" data-ai-hint="item product"/>
+                            <Image src={item.image!} alt={item.name} width={32} height={32} className="ml-3 rounded object-cover" data-ai-hint={item.dataAiHint || "item product"}/>
                             <div>
                               <p className="font-medium text-foreground">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{item.pricePerUnit.toFixed(2)} ر.س لل{item.unit}</p>
@@ -359,7 +449,7 @@ const PosPage = () => {
         </Card>
       </div>
 
-      {/* Weight Input Modal */}
+      {/* Weight Input Modal (for quick add selection) */}
       <Dialog open={isWeightModalOpen} onOpenChange={(isOpen) => {
         if (!isOpen) {
             setProductToWeigh(null);
@@ -374,16 +464,16 @@ const PosPage = () => {
             {productToWeigh && (
                 <div className="space-y-4 py-3">
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md">
-                        <Image src={productToWeigh.image!} alt={productToWeigh.name} width={40} height={40} className="rounded" data-ai-hint="item product"/>
+                        <Image src={productToWeigh.image!} alt={productToWeigh.name} width={40} height={40} className="rounded" data-ai-hint={productToWeigh.dataAiHint || "item product"}/>
                         <div>
                             <p className="font-medium text-lg">{productToWeigh.name}</p>
                             <p className="text-sm text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ر.س / {productToWeigh.unit}</p>
                         </div>
                     </div>
                     <div>
-                        <Label htmlFor="weight-input" className="text-muted-foreground">الوزن المطلوب ({productToWeigh.unit})</Label>
+                        <Label htmlFor="weight-input-modal" className="text-muted-foreground">الوزن المطلوب ({productToWeigh.unit})</Label>
                         <Input 
-                            id="weight-input"
+                            id="weight-input-modal"
                             type="number"
                             value={weightInputValue}
                             onChange={(e) => setWeightInputValue(e.target.value)}
