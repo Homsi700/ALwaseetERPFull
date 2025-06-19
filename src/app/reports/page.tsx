@@ -12,16 +12,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from "@/components/ui/calendar";
-import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch, DollarSign } from 'lucide-react';
+import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch, DollarSign, AlertTriangle } from 'lucide-react';
 import { explainFinancialReport, ExplainFinancialReportInput, ExplainFinancialReportOutput } from '@/ai/flows/financial-report-assistant';
 import { useToast } from '@/hooks/use-toast';
-import { format } from "date-fns";
+import { format, parse, startOfMonth, endOfMonth, eachMonthOfInterval, getMonth, getYear } from "date-fns";
 import { arSA } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line, PieChart as RechartsPieChart } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Pie, Cell, LineChart, Line, PieChart as RechartsPieChart, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
+import { cn } from "@/lib/utils";
 
 const MOCK_PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 const ALL_ITEMS_FILTER_VALUE = "__ALL_ITEMS_FILTER_VALUE__";
@@ -40,6 +41,7 @@ const chartConfig = {
   activeCustomers: { label: "عملاء نشطون", color: "hsl(var(--chart-2))"}, 
   productCategory: {label: "فئة المنتج", color: "hsl(var(--chart-3))"},
   averageOrderValue: { label: "متوسط قيمة الطلب (ل.س)", color: "hsl(var(--chart-4))"},
+  topProductSales: { label: "مبيعات المنتج (ل.س)", color: "hsl(var(--chart-2))"},
 } satisfies React.ComponentProps<typeof ChartContainer>["config"];
 
 interface SalesSummaryData { name: string; sales: number; } 
@@ -47,6 +49,8 @@ interface ProfitLossData { month: string; revenue: number; cogs: number; expense
 interface InventoryStatusData { name: string; products: number; } 
 interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; } 
 interface AverageOrderValueData { name: string; averageOrderValue: number; }
+interface TopSellingProductData { name: string; totalSales: number; }
+interface LowStockProductsData { count: number; }
 
 
 const FinancialReportsPage = () => {
@@ -59,18 +63,20 @@ const FinancialReportsPage = () => {
   const { user } = useAuth();
 
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth() -1 , 1), 
-    to: new Date(),
+    from: startOfMonth(new Date(new Date().setMonth(new Date().getMonth() - 1))),
+    to: endOfMonth(new Date()),
   });
   const [reportType, setReportType] = useState<string>("sales_summary");
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
-  const [selectedClientFilter, setSelectedClientFilter] = useState<string>("");
-  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>(ALL_ITEMS_FILTER_VALUE);
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string>(ALL_ITEMS_FILTER_VALUE);
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>(ALL_ITEMS_FILTER_VALUE);
   
   const [isLoadingReportData, setIsLoadingReportData] = useState(false);
   const [salesSummaryData, setSalesSummaryData] = useState<SalesSummaryData[]>([]);
+  const [topSellingProductsData, setTopSellingProductsData] = useState<TopSellingProductData[]>([]);
   const [profitLossData, setProfitLossData] = useState<ProfitLossData[]>([]); 
   const [inventoryStatusData, setInventoryStatusData] = useState<InventoryStatusData[]>([]);
+  const [lowStockProductsData, setLowStockProductsData] = useState<LowStockProductsData | null>(null);
   const [customerActivityData, setCustomerActivityData] = useState<CustomerActivityData[]>([]); 
   const [averageOrderValueData, setAverageOrderValueData] = useState<AverageOrderValueData[]>([]);
   
@@ -106,55 +112,104 @@ const FinancialReportsPage = () => {
     if (!user) return;
     setIsLoadingReportData(true);
     
-    const fromDate = dateRange?.from?.toISOString() || new Date(0).toISOString();
-    const toDate = dateRange?.to?.toISOString() || new Date().toISOString();
+    const fromDateISO = dateRange?.from?.toISOString();
+    const toDateISO = dateRange?.to ? new Date(dateRange.to.setHours(23, 59, 59, 999)).toISOString() : undefined;
+
 
     if (reportType === "sales_summary") {
       try {
-        let query = supabase.from('sales').select('sale_date, total_amount');
-        if (dateRange?.from) query = query.gte('sale_date', fromDate);
-        if (dateRange?.to) query = query.lte('sale_date', toDate);
-        
-        // Apply client filter if selected and not "ALL"
+        // Fetch monthly sales summary
+        let salesQuery = supabase.from('sales').select('sale_date, total_amount');
+        if (fromDateISO) salesQuery = salesQuery.gte('sale_date', fromDateISO);
+        if (toDateISO) salesQuery = salesQuery.lte('sale_date', toDateISO);
         if (selectedClientFilter && selectedClientFilter !== ALL_ITEMS_FILTER_VALUE) {
-            query = query.eq('client_id', selectedClientFilter);
+            salesQuery = salesQuery.eq('client_id', selectedClientFilter);
         }
 
-        const { data, error } = await query;
-        if (error) throw error;
+        const { data: salesResult, error: salesError } = await salesQuery;
+        if (salesError) throw salesError;
 
         const monthlySales: {[key: string]: number} = {};
-        data?.forEach(sale => {
-          const month = format(new Date(sale.sale_date), "yyyy-MM", { locale: arSA });
-          monthlySales[month] = (monthlySales[month] || 0) + sale.total_amount;
+        salesResult?.forEach(sale => {
+          const monthYearKey = format(new Date(sale.sale_date), "yyyy-MM");
+          monthlySales[monthYearKey] = (monthlySales[monthYearKey] || 0) + sale.total_amount;
         });
         
         const formattedSalesData = Object.entries(monthlySales)
             .map(([monthYear, totalSales]) => ({
-                name: format(new Date(monthYear + '-01'), "MMM yyyy", { locale: arSA }), 
+                name: format(parse(monthYear, "yyyy-MM", new Date()), "MMM yyyy", { locale: arSA }), 
                 sales: totalSales,
             }))
-            .sort((a,b) => new Date(a.name.split(" ")[1] + "-" + (arSA.localize?.month(arSA.localize.monthName({width:'abbreviated'}).indexOf(a.name.split(" ")[0])) || 0) + "-01").getTime() - new Date(b.name.split(" ")[1] + "-" + (arSA.localize?.month(arSA.localize.monthName({width:'abbreviated'}).indexOf(b.name.split(" ")[0])) || 0) + "-01").getTime()); 
+            .sort((a,b) => parse(a.name, "MMM yyyy", new Date(), {locale: arSA}).getTime() - parse(b.name, "MMM yyyy", new Date(), {locale: arSA}).getTime()); 
 
         setSalesSummaryData(formattedSalesData);
+
+        // Fetch top selling products (simplified)
+        let saleItemsQuery = supabase.from('sale_items')
+          .select('product_id, total_price, products(name)');
+        
+        // To filter sale_items by date, we need to join with sales table or filter sales first.
+        // This is a simplified client-side approach, more complex scenarios might need a DB function.
+        if(salesResult && salesResult.length > 0){
+            const saleIds = salesResult.map(s => s.id).filter(id => id !== undefined) as string[]; // Assuming sales table has an `id` column
+            if(saleIds.length > 0){
+                //This is not fully correct, as sale_items doesn't have a direct sale_date.
+                //A proper solution would be a join or a view in Supabase.
+                //For now, we'll display a message or a simplified version based on ALL sale_items
+                // and mention this limitation.
+                
+                // Simplified: Aggregate all sale items and then fetch product names
+                const { data: allSaleItems, error: allSaleItemsError } = await supabase
+                    .from('sale_items')
+                    .select('product_id, total_price, products(id, name)')
+                    .limit(500); // Limit to avoid fetching too much data client-side
+                
+                if(allSaleItemsError) throw allSaleItemsError;
+
+                const productSales: {[productId: string]: { name: string, totalSales: number }} = {};
+                allSaleItems?.forEach(item => {
+                    if (item.products && item.product_id) {
+                        if (!productSales[item.product_id]) {
+                            productSales[item.product_id] = { name: item.products.name, totalSales: 0 };
+                        }
+                        productSales[item.product_id].totalSales += item.total_price;
+                    }
+                });
+
+                const topProducts = Object.values(productSales)
+                    .sort((a,b) => b.totalSales - a.totalSales)
+                    .slice(0, 5); // Top 5
+                setTopSellingProductsData(topProducts);
+                if (topProducts.length === 0 && formattedSalesData.length > 0){
+                     toast({ title: "تنبيه بخصوص أفضل المنتجات", description: "لم يتم العثور على تفاصيل بنود مبيعات كافية لعرض أفضل المنتجات للفترة المحددة. العرض الحالي مبني على بيانات عامة."});
+                }
+            } else {
+                 setTopSellingProductsData([]);
+            }
+        } else {
+            setTopSellingProductsData([]);
+        }
         if (formattedSalesData.length === 0) {
             toast({ title: "لا توجد بيانات مبيعات", description: "لم يتم العثور على مبيعات للفترة والمعايير المحددة."});
         }
+
       } catch (error: any) {
         toast({ title: `خطأ في جلب ملخص المبيعات`, description: error.message, variant: 'destructive'});
         setSalesSummaryData([]);
+        setTopSellingProductsData([]);
       }
     } else if (reportType === "inventory_status") {
        try {
-        let query = supabase.from('products').select('category, id');
+        // Products by category
+        let productsQuery = supabase.from('products').select('category, id');
         if (selectedCategoryFilter && selectedCategoryFilter !== ALL_ITEMS_FILTER_VALUE) {
-            query = query.eq('category', selectedCategoryFilter);
+            productsQuery = productsQuery.eq('category', selectedCategoryFilter);
         }
-        const { data, error } = await query;
+        const { data: productsResult, error: productsError } = await productsQuery;
         
-        if (error) throw error;
+        if (productsError) throw productsError;
         const categoryData: {[key:string]: number} = {};
-        data?.forEach(p => {
+        productsResult?.forEach(p => {
             const cat = p.category || 'غير مصنف';
             categoryData[cat] = (categoryData[cat] || 0) + 1; 
         });
@@ -162,27 +217,37 @@ const FinancialReportsPage = () => {
         if (Object.keys(categoryData).length === 0) {
              toast({ title: "لا توجد بيانات للمخزون", description: "لم يتم العثور على منتجات للمعايير المحددة."});
         }
+
+        // Low stock products count
+        const { data: lowStockResult, error: lowStockError, count: lowStockCount } = await supabase
+            .from('products')
+            .select('id', { count: 'exact' })
+            .lte('stock', supabase.sql`min_stock_level`); // Assumes min_stock_level is a column name
+            // If min_stock_level is dynamic or a fixed value, use .lte('stock', SOME_VALUE)
+
+        if(lowStockError) throw lowStockError;
+        setLowStockProductsData({ count: lowStockCount || 0 });
+
        } catch (error: any) {
         toast({ title: `خطأ في جلب حالة المخزون`, description: error.message, variant: 'destructive'});
         setInventoryStatusData([]);
+        setLowStockProductsData(null);
        }
     } else if (reportType === "average_order_value") {
         try {
-            let query = supabase.from('sales').select('sale_date, total_amount');
-            if (dateRange?.from) query = query.gte('sale_date', fromDate);
-            if (dateRange?.to) query = query.lte('sale_date', toDate);
-            
+            let query = supabase.from('sales').select('total_amount');
+            if (fromDateISO) query = query.gte('sale_date', fromDateISO);
+            if (toDateISO) query = query.lte('sale_date', toDateISO);
             if (selectedClientFilter && selectedClientFilter !== ALL_ITEMS_FILTER_VALUE) {
                 query = query.eq('client_id', selectedClientFilter);
             }
 
-            const { data, error } = await query;
+            const { data, error, count } = await query.select('total_amount', {count: 'exact'});
             if (error) throw error;
 
-            if (data && data.length > 0) {
+            if (data && data.length > 0 && count && count > 0) {
                 const totalSalesAmount = data.reduce((sum, sale) => sum + sale.total_amount, 0);
-                const numberOfSales = data.length;
-                const avgOrderValue = totalSalesAmount / numberOfSales;
+                const avgOrderValue = totalSalesAmount / count;
                 setAverageOrderValueData([{ name: "الفترة المحددة", averageOrderValue: avgOrderValue}]);
             } else {
                 setAverageOrderValueData([]);
@@ -192,24 +257,36 @@ const FinancialReportsPage = () => {
             toast({ title: `خطأ في جلب متوسط قيمة الطلب`, description: error.message, variant: 'destructive'});
             setAverageOrderValueData([]);
         }
-    } else {
-        // Mock data for other report types, with a toast indicating they are under development
+    } else if (reportType === "profit_loss" || reportType === "customer_activity") {
+        // Mock data for P&L and Customer Activity as they require complex backend aggregation
         setProfitLossData([ 
-            { month: 'يناير', revenue: 5000, cogs: 2000, expenses: 1000, netProfit: 2000 },
-            { month: 'فبراير', revenue: 6000, cogs: 2500, expenses: 1200, netProfit: 2300 },
+            { month: format(startOfMonth(new Date(new Date().setMonth(new Date().getMonth() - 1))), "MMM yyyy", { locale: arSA }), revenue: 5000, cogs: 2000, expenses: 1000, netProfit: 2000 },
+            { month: format(startOfMonth(new Date()), "MMM yyyy", { locale: arSA }), revenue: 6000, cogs: 2500, expenses: 1200, netProfit: 2300 },
         ]);
         setCustomerActivityData([ 
-            { date: '2024-01-01', newCustomers: 5, activeCustomers: 50, totalOrders: 70 },
-            { date: '2024-02-01', newCustomers: 8, activeCustomers: 55, totalOrders: 80 },
+            { date: format(startOfMonth(new Date(new Date().setMonth(new Date().getMonth() - 1))), "yyyy-MM-dd"), newCustomers: 5, activeCustomers: 50, totalOrders: 70 },
+            { date: format(startOfMonth(new Date()), "yyyy-MM-dd"), newCustomers: 8, activeCustomers: 55, totalOrders: 80 },
         ]);
-        if(reportType !== "sales_summary") setSalesSummaryData([]);
-        if(reportType !== "inventory_status") setInventoryStatusData([]);
-        if(reportType !== "average_order_value") setAverageOrderValueData([]);
-        toast({ title: "التقرير قيد التطوير", description: `التقارير المتقدمة مثل "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap]}" تتطلب تجميع بيانات معقد. يتم عرض بيانات وهمية أو مبسطة حالياً.`});
+        // Clear other data types to avoid confusion
+        setSalesSummaryData([]);
+        setTopSellingProductsData([]);
+        setInventoryStatusData([]);
+        setLowStockProductsData(null);
+        setAverageOrderValueData([]);
+        toast({ title: "التقرير قيد التطوير (بيانات وهمية)", description: `التقارير المتقدمة مثل "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap]}" تتطلب تجميع بيانات معقد في الواجهة الخلفية (Supabase Views/Functions). يتم عرض بيانات وهمية حالياً.`});
+    } else {
+        // Clear all data if no specific report type matches
+        setSalesSummaryData([]);
+        setTopSellingProductsData([]);
+        setProfitLossData([]);
+        setInventoryStatusData([]);
+        setLowStockProductsData(null);
+        setCustomerActivityData([]);
+        setAverageOrderValueData([]);
     }
 
     setIsLoadingReportData(false);
-  }, [user, reportType, dateRange, toast, selectedCategoryFilter, selectedClientFilter, selectedSupplierFilter]); // Added selectedClientFilter and selectedSupplierFilter
+  }, [user, reportType, dateRange, toast, selectedCategoryFilter, selectedClientFilter, selectedSupplierFilter]); 
 
   useEffect(() => {
     if(user) fetchReportData();
@@ -249,21 +326,37 @@ const FinancialReportsPage = () => {
     toast({ title: "بدء تصدير التقرير", description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...` });
     setTimeout(() => {
       let dataToExport: any[] = [];
-      if (reportType === "sales_summary") dataToExport = salesSummaryData;
-      else if (reportType === "inventory_status") dataToExport = inventoryStatusData;
-      else if (reportType === "average_order_value") dataToExport = averageOrderValueData;
-      else if (reportType === "profit_loss") dataToExport = profitLossData; // Example for mock data export
-      else if (reportType === "customer_activity") dataToExport = customerActivityData; // Example for mock data export
+      let headers: string[] = [];
+
+      if (reportType === "sales_summary") {
+        dataToExport = salesSummaryData;
+        headers = ["الشهر", "إجمالي المبيعات (ل.س)"];
+      } else if (reportType === "inventory_status") {
+        dataToExport = inventoryStatusData;
+        headers = ["فئة المنتج", "عدد المنتجات"];
+      } else if (reportType === "average_order_value") {
+        dataToExport = averageOrderValueData;
+        headers = ["الفترة", "متوسط قيمة الطلب (ل.س)"];
+      } else if (reportType === "profit_loss") {
+        dataToExport = profitLossData;
+        headers = ["الشهر", "الإيرادات (ل.س)", "تكلفة البضاعة (ل.س)", "المصروفات (ل.س)", "صافي الربح (ل.س)"];
+      } else if (reportType === "customer_activity") {
+        dataToExport = customerActivityData;
+         headers = ["التاريخ", "عملاء جدد", "عملاء نشطون", "إجمالي الطلبات"];
+      } else if (reportType === "top_selling_products_placeholder" && topSellingProductsData.length > 0){
+        dataToExport = topSellingProductsData;
+        headers = ["اسم المنتج", "إجمالي المبيعات (ل.س)"];
+      }
 
 
       if (dataToExport.length > 0) {
         const csvContent = "data:text/csv;charset=utf-8," 
-            + Object.keys(dataToExport[0]).join(",") + "\n" 
-            + dataToExport.map(e => Object.values(e).join(",")).join("\n");
+            + headers.join(",") + "\n" 
+            + dataToExport.map(e => Object.values(e).map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `${reportType}_report.csv`);
+        link.setAttribute("download", `${reportType}_report_${format(new Date(), "yyyyMMddHHmmss")}.csv`);
         document.body.appendChild(link); 
         link.click();
         document.body.removeChild(link);
@@ -276,10 +369,11 @@ const FinancialReportsPage = () => {
 
   const reportTypeLabelMap: {[key: string]: string} = {
     sales_summary: "ملخص المبيعات",
-    profit_loss: "الأرباح والخسائر (مثال)",
-    inventory_status: "حالة المخزون (حسب الفئة)",
-    customer_activity: "نشاط العملاء (مثال)",
-    average_order_value: "متوسط قيمة الطلب"
+    profit_loss: "الأرباح والخسائر (بيانات وهمية)",
+    inventory_status: "حالة المخزون",
+    customer_activity: "نشاط العملاء (بيانات وهمية)",
+    average_order_value: "متوسط قيمة الطلب",
+    top_selling_products_placeholder: "أفضل المنتجات مبيعاً (مبسط)", // Placeholder, might integrate into sales_summary card
   };
 
   const renderChartForReportType = () => {
@@ -288,60 +382,99 @@ const FinancialReportsPage = () => {
     }
     switch (reportType) {
       case "sales_summary":
-        return salesSummaryData.length > 0 ? (
-          <ChartContainer config={chartConfig} className="w-full h-full">
-            <BarChart data={salesSummaryData} layout="vertical" barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
-              <XAxis type="number" axisLine={false} tickLine={false} />
-              <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltipContent />} cursor={{fill: 'hsl(var(--muted))'}}/>
-              <Legend content={<ChartLegendContent />}/>
-              <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
-            </BarChart>
-          </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة والمعايير المحددة.</p>;
-      case "profit_loss":
+        return (
+          <div className="space-y-6">
+            {salesSummaryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={salesSummaryData} layout="vertical" barCategoryGap="20%">
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
+                  <XAxis type="number" axisLine={false} tickLine={false} tickFormatter={(value) => `${value.toLocaleString()} ل.س`}/>
+                  <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toLocaleString()} ل.س`} />} cursor={{fill: 'hsl(var(--muted))'}}/>
+                  <Legend content={<ChartLegendContent />}/>
+                  <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة والمعايير المحددة.</p>}
+            
+            {topSellingProductsData.length > 0 ? (
+                 <Card>
+                    <CardHeader><CardTitle className="text-lg font-headline">أفضل 5 منتجات مبيعاً (مبسط)</CardTitle><CardDescription>ملاحظة: هذا العرض مبسط وقد لا يعكس الفلترة الزمنية بشكل كامل حالياً.</CardDescription></CardHeader>
+                    <CardContent>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={topSellingProductsData} layout="horizontal">
+                                <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                                <XAxis dataKey="name" type="category" interval={0} angle={-30} textAnchor="end" height={70} />
+                                <YAxis tickFormatter={(value) => `${value.toLocaleString()} ل.س`}/>
+                                <Tooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toLocaleString()} ل.س`} />} cursor={{fill: 'hsl(var(--muted))'}}/>
+                                <Bar dataKey="totalSales" fill="var(--color-topProductSales)" radius={[4, 4, 0, 0]} name={chartConfig.topProductSales.label} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </CardContent>
+                 </Card>
+            ) : salesSummaryData.length > 0 ? <p className="text-center text-muted-foreground p-4">لا توجد بيانات كافية لعرض أفضل المنتجات مبيعاً.</p> : null}
+          </div>
+        );
+      case "profit_loss": // MOCK DATA
         return profitLossData.length > 0 ? (
-          <ChartContainer config={chartConfig} className="w-full h-full">
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={profitLossData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip content={<ChartTooltipContent indicator="line" />} />
+              <YAxis tickFormatter={(value) => `${value.toLocaleString()} ل.س`}/>
+              <Tooltip content={<ChartTooltipContent indicator="line" formatter={(value) => `${Number(value).toLocaleString()} ل.س`} />} />
               <Legend content={<ChartLegendContent />} />
               <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} name={chartConfig.revenue.label}/>
               <Line type="monotone" dataKey="cogs" stroke="var(--color-cogs)" strokeWidth={2} name={chartConfig.cogs.label}/>
               <Line type="monotone" dataKey="netProfit" stroke="var(--color-netProfit)" strokeWidth={3} name={chartConfig.netProfit.label}/>
             </LineChart>
-          </ChartContainer>
+          </ResponsiveContainer>
         ) : <p className="text-center text-muted-foreground p-4">مثال لتقرير الأرباح والخسائر. (يتطلب تجميع بيانات متقدم من الخلفية)</p>;
       case "inventory_status":
-        return inventoryStatusData.length > 0 ? (
-          <ChartContainer config={chartConfig} className="w-full h-full">
-            <RechartsPieChart>
-              <Tooltip content={<ChartTooltipContent nameKey="name" />} />
-              <Pie data={inventoryStatusData} dataKey="products" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
-                 {inventoryStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={MOCK_PIE_COLORS[index % MOCK_PIE_COLORS.length]} />
-                 ))}
-              </Pie>
-              <Legend content={<ChartLegendContent nameKey="name" />} />
-            </RechartsPieChart>
-          </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون للمعايير المحددة.</p>;
-      case "customer_activity":
+        return (
+            <div className="space-y-6">
+                {inventoryStatusData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                    <RechartsPieChart>
+                    <Tooltip content={<ChartTooltipContent nameKey="name" />} />
+                    <Pie data={inventoryStatusData} dataKey="products" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                        {inventoryStatusData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={MOCK_PIE_COLORS[index % MOCK_PIE_COLORS.length]} />
+                        ))}
+                    </Pie>
+                    <Legend content={<ChartLegendContent nameKey="name" />} />
+                    </RechartsPieChart>
+                </ResponsiveContainer>
+                ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لتوزيع المنتجات حسب الفئة.</p>}
+                {lowStockProductsData && (
+                    <Card className="bg-destructive/10 border-destructive">
+                        <CardHeader className="flex-row items-center justify-between pb-2">
+                             <CardTitle className="text-lg font-headline text-destructive">منتجات منخفضة المخزون</CardTitle>
+                             <AlertTriangle className="h-6 w-6 text-destructive" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold text-destructive text-center">
+                                {lowStockProductsData.count}
+                            </div>
+                            <p className="text-xs text-destructive text-center mt-1">منتجات وصلت أو قلت عن الحد الأدنى للمخزون.</p>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        );
+      case "customer_activity": // MOCK DATA
          return customerActivityData.length > 0 ? (
-          <ChartContainer config={chartConfig} className="w-full h-full">
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart data={customerActivityData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tickFormatter={(value) => new Date(value).toLocaleDateString('ar-EG', { month: 'short' })} />
+              <XAxis dataKey="date" tickFormatter={(value) => format(new Date(value), "MMM yy", { locale: arSA })} />
               <YAxis />
               <Tooltip content={<ChartTooltipContent />} />
               <Legend content={<ChartLegendContent />} />
               <Bar dataKey="newCustomers" fill="var(--color-newCustomers)" name={chartConfig.newCustomers.label} radius={[4, 4, 0, 0]} />
               <Bar dataKey="activeCustomers" fill="var(--color-activeCustomers)" name={chartConfig.activeCustomers.label} radius={[4, 4, 0, 0]} />
             </BarChart>
-          </ChartContainer>
+          </ResponsiveContainer>
         ) : <p className="text-center text-muted-foreground p-4">مثال لتقرير نشاط العملاء. (يتطلب تجميع بيانات متقدم من الخلفية)</p>;
       case "average_order_value":
         return averageOrderValueData.length > 0 ? (
@@ -373,7 +506,7 @@ const FinancialReportsPage = () => {
             <FileText className="ml-3 h-8 w-8 text-primary" />
             التقارير المالية والتحليلات
           </h1>
-           <Button variant="outline" onClick={handleExportReport}>
+           <Button variant="outline" onClick={handleExportReport} disabled={isLoadingReportData}>
             <Download className="ml-2 h-4 w-4" /> تصدير التقرير الحالي
           </Button>
         </div>
@@ -381,7 +514,7 @@ const FinancialReportsPage = () => {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl text-foreground flex items-center"><Filter className="ml-2 h-5 w-5 text-primary"/>خيارات التصفية وعرض التقرير</CardTitle>
-            <CardDescription>حدد نوع التقرير والفترة الزمنية. التقارير المتقدمة تتطلب منطق تجميع في الواجهة الخلفية (Supabase Views/Functions) لعرض بيانات دقيقة وفعالة.</CardDescription>
+            <CardDescription>حدد نوع التقرير والفترة الزمنية. بعض التقارير المتقدمة قد تتطلب منطق تجميع في الواجهة الخلفية (Supabase Views/Functions) لعرض بيانات دقيقة وفعالة عند التعامل مع كميات كبيرة من البيانات.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
             <div>
@@ -404,7 +537,7 @@ const FinancialReportsPage = () => {
                   <Button
                     id="dateRange"
                     variant={"outline"}
-                    className="w-full justify-start text-right font-normal mt-1 bg-input/50 hover:bg-input/70"
+                    className={cn("w-full justify-start text-right font-normal mt-1 bg-input/50 hover:bg-input/70", !dateRange && "text-muted-foreground")}
                   >
                     <CalendarIcon className="ml-2 h-4 w-4" />
                     {dateRange?.from ? (
@@ -440,7 +573,7 @@ const FinancialReportsPage = () => {
             </Button>
             <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 border-t pt-4">
                 <div>
-                  <Label htmlFor="filterCategory">تصفية حسب الفئة (تؤثر على تقرير حالة المخزون)</Label>
+                  <Label htmlFor="filterCategory">تصفية حسب الفئة (تؤثر على "حالة المخزون")</Label>
                   <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter} dir="rtl">
                     <SelectTrigger id="filterCategory" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الفئات" /></SelectTrigger>
                     <SelectContent>
@@ -450,7 +583,7 @@ const FinancialReportsPage = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="filterClient">تصفية حسب العميل (تؤثر على ملخص المبيعات ومتوسط قيمة الطلب)</Label>
+                  <Label htmlFor="filterClient">تصفية حسب العميل (تؤثر على "ملخص المبيعات" و "متوسط قيمة الطلب")</Label>
                   <Select value={selectedClientFilter} onValueChange={setSelectedClientFilter} dir="rtl">
                     <SelectTrigger id="filterClient" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل العملاء" /></SelectTrigger>
                     <SelectContent>
@@ -461,7 +594,7 @@ const FinancialReportsPage = () => {
                 </div>
                 <div>
                   <Label htmlFor="filterSupplier">تصفية حسب المورد (واجهة فقط حالياً)</Label>
-                  <Select value={selectedSupplierFilter} onValueChange={setSelectedSupplierFilter} dir="rtl">
+                  <Select value={selectedSupplierFilter} onValueChange={setSelectedSupplierFilter} dir="rtl" disabled>
                     <SelectTrigger id="filterSupplier" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الموردين" /></SelectTrigger>
                     <SelectContent>
                        <SelectItem value={ALL_ITEMS_FILTER_VALUE}>كل الموردين</SelectItem>
@@ -470,7 +603,7 @@ const FinancialReportsPage = () => {
                   </Select>
                 </div>
             </div>
-             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: تصفية المورد هي واجهة فقط حالياً. تفعيل التصفية الكاملة يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية.</p>
+             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: تصفية المورد هي واجهة فقط حالياً وغير مفعلة. تفعيل التصفية الكاملة يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية (لم يتم طلبه بعد).</p>
           </CardContent>
         </Card>
 
@@ -488,7 +621,9 @@ const FinancialReportsPage = () => {
             <Button variant="ghost" size="icon"><Maximize className="h-5 w-5 text-muted-foreground"/></Button>
           </CardHeader>
           <CardContent className="min-h-[350px] p-2 pr-6">
-            {renderChartForReportType()}
+            <ChartContainer config={chartConfig} className="w-full h-full">
+              {renderChartForReportType()}
+            </ChartContainer>
           </CardContent>
           <CardFooter className="text-xs text-muted-foreground border-t pt-3">
             البيانات المعروضة للفترة من {dateRange?.from ? format(dateRange.from, "PPP", {locale:arSA}) : "غير محدد"} إلى {dateRange?.to ? format(dateRange.to, "PPP", {locale:arSA}) : "غير محدد"}.
