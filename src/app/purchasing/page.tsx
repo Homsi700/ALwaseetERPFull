@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PlusCircle, FileText, Users, Filter, Printer, Trash2 as Trash2Icon, PackageSearch } from 'lucide-react';
+import { PlusCircle, FileText, Users, Filter, Printer, Trash2 as Trash2Icon, PackageSearch, Landmark } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +22,11 @@ import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import type { Product as ProductType } from '@/components/products/ProductTable'; 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon } from 'lucide-react';
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { arSA } from "date-fns/locale";
 
 
 interface Supplier {
@@ -36,7 +41,7 @@ interface Supplier {
 }
 
 interface PurchaseItem { 
-  id?: string; // ID from purchase_invoice_items if editing/displaying
+  id?: string; 
   product_id: string;
   productName?: string; 
   quantity: number;
@@ -52,12 +57,25 @@ interface PurchaseInvoice {
   supplier_name?: string; 
   invoice_date: string;
   due_date?: string;
-  items: PurchaseItem[]; 
-  sub_total: number;
+  // items array is handled via purchase_invoice_items table
   tax_amount: number;
   grand_total: number;
   status: 'غير مدفوعة' | 'مدفوعة جزئياً' | 'مدفوعة بالكامل' | 'متأخرة';
+  notes?: string;
 }
+
+interface Expense {
+  id: string;
+  created_at?: string;
+  description: string;
+  amount: number;
+  expense_date: string;
+  category: string;
+  user_id?: string; 
+}
+
+const expenseCategories: Expense['category'][] = ['إيجار', 'رواتب', 'فواتير (كهرباء, ماء, انترنت)', 'صيانة', 'مواصلات', 'تسويق وإعلان', 'مستلزمات مكتبية', 'نثريات عامة', 'ضيافة', 'أخرى'];
+
 
 // Mappers
 const mapToSupabaseSupplier = (supplier: Omit<Supplier, 'id' | 'created_at'> & { id?: string }) => ({
@@ -80,7 +98,7 @@ const mapFromSupabaseSupplier = (data: any): Supplier => ({
   notes: data.notes,
 });
 
-const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoice => ({
+const mapFromSupabaseInvoice = (data: any, supplierName?: string, items?: PurchaseItem[]): PurchaseInvoice => ({
     id: data.id,
     created_at: data.created_at,
     invoice_number: data.invoice_number,
@@ -88,38 +106,46 @@ const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoi
     supplier_name: supplierName || data.suppliers?.name || data.supplier_id, 
     invoice_date: data.invoice_date,
     due_date: data.due_date,
-    items: (data.purchase_invoice_items || []).map((item: any) => ({
-        id: item.id, // ID of the purchase_invoice_item record
-        product_id: item.product_id,
-        productName: item.products?.name || 'منتج غير معروف',
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-    })),
-    sub_total: data.sub_total,
-    tax_amount: data.tax_amount,
+    tax_amount: data.tax_amount || 0,
     grand_total: data.grand_total,
     status: data.status,
+    notes: data.notes,
+    // items are fetched separately
+});
+
+const mapFromSupabaseExpense = (data: any): Expense => ({
+  id: data.id,
+  created_at: data.created_at,
+  description: data.description,
+  amount: data.amount,
+  expense_date: data.expense_date,
+  category: data.category,
+  user_id: data.user_id,
 });
 
 
 const PurchasingPage = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [availableProducts, setAvailableProducts] = useState<ProductType[]>([]);
   
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
 
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
   const [editingSupplier, setEditingSupplier] = useState<Supplier | undefined>(undefined);
   const [editingInvoice, setEditingInvoice] = useState<PurchaseInvoice | undefined>(undefined);
+  const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   
   const [currentInvoiceItems, setCurrentInvoiceItems] = useState<PurchaseItem[]>([]);
   const [invoiceTaxAmount, setInvoiceTaxAmount] = useState<number>(0);
+  const [invoiceNotes, setInvoiceNotes] = useState<string>('');
 
 
   const { toast } = useToast();
@@ -145,11 +171,11 @@ const PurchasingPage = () => {
     try {
       const { data: invData, error: invError } = await supabase
         .from('purchase_invoices')
-        .select('*, suppliers(name), purchase_invoice_items(*, products(id, name))') 
+        .select('*, suppliers(name)') 
         .order('invoice_date', { ascending: false });
 
       if (invError) throw invError;
-
+      
       const populatedInvoices = invData.map((inv: any) => mapFromSupabaseInvoice(inv, inv.suppliers?.name));
       setInvoices(populatedInvoices);
 
@@ -159,6 +185,43 @@ const PurchasingPage = () => {
       setIsLoadingInvoices(false);
     }
   }, [toast, user]);
+  
+  const fetchInvoiceItems = useCallback(async (invoiceId: string): Promise<PurchaseItem[]> => {
+    if (!user) return [];
+    try {
+        const { data, error } = await supabase
+            .from('purchase_invoice_items')
+            .select('*, products(name)')
+            .eq('purchase_invoice_id', invoiceId);
+        if (error) throw error;
+        return data.map((item: any) => ({
+            id: item.id,
+            product_id: item.product_id,
+            productName: item.products?.name || 'منتج غير معروف',
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+        }));
+    } catch (error: any) {
+        toast({ title: 'خطأ في جلب بنود الفاتورة', description: error.message, variant: 'destructive' });
+        return [];
+    }
+  }, [toast, user]);
+
+  const fetchExpenses = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingExpenses(true);
+    try {
+      const { data, error } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false });
+      if (error) throw error;
+      setExpenses(data.map(mapFromSupabaseExpense));
+    } catch (error: any) {
+      toast({ title: 'خطأ في جلب المصاريف', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoadingExpenses(false);
+    }
+  }, [toast, user]);
+
 
   const fetchProductsForForm = useCallback(async () => {
     if(!user) return;
@@ -191,14 +254,14 @@ const PurchasingPage = () => {
       fetchSuppliers();
       fetchProductsForForm(); 
       fetchInvoices();
+      fetchExpenses();
     }
-  }, [user, fetchSuppliers, fetchProductsForForm, fetchInvoices]);
+  }, [user, fetchSuppliers, fetchProductsForForm, fetchInvoices, fetchExpenses]);
 
   const handleAddSupplier = () => { setEditingSupplier(undefined); setIsSupplierModalOpen(true); };
   const handleEditSupplier = (supplier: Supplier) => { setEditingSupplier(supplier); setIsSupplierModalOpen(true); };
   const handleDeleteSupplier = async (id: string) => {
     try {
-      // Check if supplier is used in any purchase_invoices
       const { data: invoicesWithSupplier, error: checkError } = await supabase
         .from('purchase_invoices')
         .select('id')
@@ -232,7 +295,7 @@ const PurchasingPage = () => {
         if (error) throw error;
         toast({ title: 'تم تحديث المورد'});
       } else {
-        const { error } = await supabase.from('suppliers').insert([supabaseData]); // Supabase v2 expects an array for insert
+        const { error } = await supabase.from('suppliers').insert([supabaseData]);
         if (error) throw error;
         toast({ title: 'تمت إضافة مورد'});
       }
@@ -244,25 +307,31 @@ const PurchasingPage = () => {
     }
   };
 
-  const handleAddInvoice = () => { setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); setIsInvoiceModalOpen(true); };
-  const handleEditInvoice = (invoice: PurchaseInvoice) => { 
+  const handleAddInvoice = () => { 
+    setEditingInvoice(undefined); 
+    setCurrentInvoiceItems([]); 
+    setInvoiceTaxAmount(0); 
+    setInvoiceNotes('');
+    setIsInvoiceModalOpen(true); 
+  };
+  const handleEditInvoice = async (invoice: PurchaseInvoice) => { 
     setEditingInvoice(invoice); 
-    const itemsWithNames = invoice.items.map(item => {
+    const items = await fetchInvoiceItems(invoice.id);
+    const itemsWithNames = items.map(item => {
         const product = availableProducts.find(p => p.id === item.product_id);
         return {...item, productName: product?.name || item.product_id };
     });
     setCurrentInvoiceItems(itemsWithNames || []); 
     setInvoiceTaxAmount(invoice.tax_amount || 0);
+    setInvoiceNotes(invoice.notes || '');
     setIsInvoiceModalOpen(true); 
   };
 
   const handleDeleteInvoice = async (id: string) => { 
     try {
-        // First, delete items associated with the invoice
         const { error: itemError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', id);
         if(itemError) throw itemError;
 
-        // Then, delete the invoice itself
         const { error: invoiceError } = await supabase.from('purchase_invoices').delete().eq('id', id);
         if(invoiceError) throw invoiceError;
 
@@ -273,7 +342,7 @@ const PurchasingPage = () => {
     }
   };
 
-  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'|'items'> & { items?: PurchaseItem[], tax_amount?: number, sub_total?: number, grand_total?: number}) => {
+  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> & {items?: PurchaseItem[]}) => {
     const subTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
     const taxAmount = formData.tax_amount || 0; 
     
@@ -282,23 +351,21 @@ const PurchasingPage = () => {
         supplier_id: formData.supplier_id,
         invoice_date: formData.invoice_date,
         due_date: formData.due_date || null,
-        sub_total: subTotal,
+        // sub_total is not saved directly to purchase_invoices table
         tax_amount: taxAmount,
         grand_total: subTotal + taxAmount,
         status: formData.status,
+        notes: formData.notes || null,
     };
 
     try {
         if (editingInvoice && editingInvoice.id) {
-            // 1. Update main invoice data
             const { error: updateError } = await supabase.from('purchase_invoices').update(mainInvoiceData).eq('id', editingInvoice.id);
             if (updateError) throw updateError;
 
-            // 2. Delete existing items for this invoice
             const { error: deleteItemsError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', editingInvoice.id);
             if (deleteItemsError) throw deleteItemsError;
 
-            // 3. Insert current items as new
             if (currentInvoiceItems.length > 0) {
                 const itemsToInsert = currentInvoiceItems.map(item => ({
                     purchase_invoice_id: editingInvoice.id,
@@ -315,14 +382,12 @@ const PurchasingPage = () => {
             // A comment can be added here if needed.
             console.warn("Stock not updated on invoice edit. This requires advanced logic for calculating differences.");
         } else { // New Invoice
-            // 1. Insert main invoice data
             const { data: newInvoice, error: insertError } = await supabase.from('purchase_invoices').insert(mainInvoiceData).select().single();
             if (insertError) throw insertError;
             if (!newInvoice) throw new Error("Failed to create new invoice record.");
 
             const newInvoiceId = newInvoice.id;
 
-            // 2. Insert items
             if (currentInvoiceItems.length > 0) {
                 const itemsToInsert = currentInvoiceItems.map(item => ({
                     purchase_invoice_id: newInvoiceId,
@@ -335,7 +400,6 @@ const PurchasingPage = () => {
                 if (insertItemsError) throw insertItemsError;
             }
 
-            // 3. Update stock for each product
             for (const item of currentInvoiceItems) {
                 const product = availableProducts.find(p => p.id === item.product_id);
                 if (product) {
@@ -352,20 +416,21 @@ const PurchasingPage = () => {
                 }
             }
             toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-            await fetchProductsForForm(); // Refetch products to reflect new stock
+            await fetchProductsForForm(); 
         }
         fetchInvoices();
         setIsInvoiceModalOpen(false);
         setEditingInvoice(undefined);
         setCurrentInvoiceItems([]);
         setInvoiceTaxAmount(0);
+        setInvoiceNotes('');
     } catch (error: any) {
         toast({ title: 'خطأ في حفظ الفاتورة', description: error.message, variant: 'destructive'});
     }
   };
   const handleInvoiceItemChange = (index: number, field: keyof PurchaseItem, value: any) => {
     const updatedItems = [...currentInvoiceItems];
-    const item = updatedItems[index] as any; // Using any for dynamic field assignment
+    const item = updatedItems[index] as any; 
     item[field] = value;
 
     if (field === 'product_id') {
@@ -373,7 +438,6 @@ const PurchasingPage = () => {
         item.productName = product?.name || '';
         item.unit_price = product?.purchasePrice || 0; 
     }
-    // Recalculate total_price if quantity or unit_price changes, or if product_id changes (which updates unit_price)
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
       const quantity = Number(item.quantity) || 0;
       const unit_price = Number(item.unit_price) || 0;
@@ -383,6 +447,49 @@ const PurchasingPage = () => {
   };
   const addInvoiceItem = () => setCurrentInvoiceItems([...currentInvoiceItems, { product_id: '', productName: '', quantity: 1, unit_price: 0, total_price: 0 }]);
   const removeInvoiceItem = (index: number) => setCurrentInvoiceItems(currentInvoiceItems.filter((_, i) => i !== index));
+
+  const handleAddExpense = () => { setEditingExpense(undefined); setIsExpenseModalOpen(true);};
+  const handleEditExpense = (expense: Expense) => { setEditingExpense(expense); setIsExpenseModalOpen(true);};
+  const handleDeleteExpense = async (id: string) => {
+    try {
+        const { error } = await supabase.from('expenses').delete().eq('id', id);
+        if (error) throw error;
+        fetchExpenses();
+        toast({ title: 'تم حذف المصروف' });
+    } catch (error: any) {
+        toast({ title: 'خطأ في حذف المصروف', description: error.message, variant: 'destructive' });
+    }
+  };
+  const handleSaveExpense = async (data: Omit<Expense, 'id' | 'created_at' | 'user_id'> & {id?: string}) => {
+    if (!user) {
+        toast({ title: 'خطأ', description: 'يجب تسجيل الدخول لحفظ المصروف.', variant: 'destructive'});
+        return;
+    }
+    const supabaseData = {
+        description: data.description,
+        amount: data.amount,
+        expense_date: data.expense_date,
+        category: data.category,
+        user_id: user.id, 
+    };
+    try {
+        if (editingExpense && editingExpense.id) {
+            const { error } = await supabase.from('expenses').update(supabaseData).eq('id', editingExpense.id);
+            if (error) throw error;
+            toast({ title: 'تم تحديث المصروف' });
+        } else {
+            const { error } = await supabase.from('expenses').insert(supabaseData);
+            if (error) throw error;
+            toast({ title: 'تمت إضافة مصروف جديد' });
+        }
+        fetchExpenses();
+        setIsExpenseModalOpen(false);
+        setEditingExpense(undefined);
+    } catch (error: any) {
+        toast({ title: 'خطأ في حفظ المصروف', description: error.message, variant: 'destructive' });
+    }
+  };
+
 
   const getStatusBadgeClass = (status: PurchaseInvoice['status']): string => {
     if (status === 'مدفوعة بالكامل') return 'bg-green-500/20 text-green-700 border-green-500/30';
@@ -395,7 +502,7 @@ const PurchasingPage = () => {
   const invoiceGrandTotal = invoiceSubTotal + invoiceTaxAmount;
 
 
-  if (isLoadingProducts && isLoadingSuppliers && isLoadingInvoices && !user) { 
+  if (isLoadingProducts && isLoadingSuppliers && isLoadingInvoices && isLoadingExpenses && !user) { 
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -405,7 +512,7 @@ const PurchasingPage = () => {
     );
   }
   
-  if (!user && (!isLoadingProducts || !isLoadingSuppliers || !isLoadingInvoices)) { 
+  if (!user && (!isLoadingProducts || !isLoadingSuppliers || !isLoadingInvoices || !isLoadingExpenses)) { 
      return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -419,13 +526,14 @@ const PurchasingPage = () => {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <h1 className="text-3xl font-headline font-semibold text-foreground">إدارة المشتريات</h1>
+        <h1 className="text-3xl font-headline font-semibold text-foreground">إدارة المشتريات والمصاريف</h1>
         
         <Tabs defaultValue="suppliers" className="w-full">
           <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2">
-            <TabsList className="grid grid-cols-2 w-full sm:w-auto">
+            <TabsList className="grid grid-cols-3 w-full sm:w-auto">
               <TabsTrigger value="suppliers"><Users className="ml-1 h-4 w-4 sm:hidden md:inline-block" />الموردون</TabsTrigger>
               <TabsTrigger value="invoices"><FileText className="ml-1 h-4 w-4 sm:hidden md:inline-block" />فواتير الشراء</TabsTrigger>
+              <TabsTrigger value="expenses"><Landmark className="ml-1 h-4 w-4 sm:hidden md:inline-block" />المصاريف</TabsTrigger>
             </TabsList>
             <div className="w-full sm:w-auto">
                 <TabsContent value="suppliers" className="mt-0 !p-0 flex justify-end">
@@ -436,6 +544,11 @@ const PurchasingPage = () => {
                 <TabsContent value="invoices" className="mt-0 !p-0 flex justify-end">
                     <Button onClick={handleAddInvoice} className="bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto">
                     <PlusCircle className="ml-2 h-5 w-5" /> إضافة فاتورة شراء
+                    </Button>
+                </TabsContent>
+                 <TabsContent value="expenses" className="mt-0 !p-0 flex justify-end">
+                    <Button onClick={handleAddExpense} className="bg-primary hover:bg-primary/90 text-primary-foreground w-full sm:w-auto">
+                    <PlusCircle className="ml-2 h-5 w-5" /> إضافة مصروف جديد
                     </Button>
                 </TabsContent>
             </div>
@@ -520,6 +633,42 @@ const PurchasingPage = () => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="expenses">
+            <Card className="shadow-lg">
+              <CardHeader><CardTitle className="font-headline text-xl">سجل المصاريف ({expenses.length})</CardTitle></CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>الوصف</TableHead><TableHead>المبلغ</TableHead><TableHead>التاريخ</TableHead><TableHead>الفئة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {isLoadingExpenses ? (
+                          <TableRow><TableCell colSpan={5} className="text-center h-24"><PackageSearch className="h-12 w-12 mx-auto text-muted-foreground/30 animate-pulse" /></TableCell></TableRow>
+                      ): expenses.length > 0 ? expenses.map(expense => (
+                        <TableRow key={expense.id}>
+                          <TableCell className="font-medium text-foreground">{expense.description}</TableCell>
+                          <TableCell className="text-muted-foreground">{expense.amount.toFixed(2)} ل.س</TableCell>
+                          <TableCell className="text-muted-foreground">{new Date(expense.expense_date).toLocaleDateString('ar-EG')}</TableCell>
+                          <TableCell className="text-muted-foreground">{expense.category}</TableCell>
+                          <TableCell className="text-left">
+                            <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                <DropdownMenuItem onClick={() => handleEditExpense(expense)}><FileEdit className="ml-2 h-4 w-4" />تعديل</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDeleteExpense(expense.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10"><Trash2Icon className="ml-2 h-4 w-4" />حذف</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )) : (
+                        <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">لا توجد مصاريف مسجلة. قم بإضافة مصروف جديد.</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
         </Tabs>
 
         {/* Supplier Modal */}
@@ -539,10 +688,10 @@ const PurchasingPage = () => {
         </Dialog>
 
         {/* Purchase Invoice Modal */}
-        <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); } }}>
-          <DialogContent className="sm:max-w-2xl bg-card">
+        <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); setInvoiceNotes(''); } }}>
+          <DialogContent className="sm:max-w-3xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingInvoice ? `تعديل فاتورة الشراء: ${editingInvoice.invoice_number}` : 'إضافة فاتورة شراء جديدة'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: fd.get('inv-number') as string || editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0')});}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: fd.get('inv-number') as string || editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), notes: fd.get('inv-notes') as string || undefined });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><Label htmlFor="inv-number">رقم الفاتورة (اتركه فارغًا للإنشاء التلقائي)</Label><Input id="inv-number" name="inv-number" defaultValue={editingInvoice?.invoice_number} className="mt-1 bg-input/50"/></div>
                     <div><Label htmlFor="inv-supplier">المورد</Label>
@@ -562,6 +711,7 @@ const PurchasingPage = () => {
                         </Select>
                     </div>
                 </div>
+                 <div><Label htmlFor="inv-notes">ملاحظات الفاتورة</Label><Textarea id="inv-notes" name="inv-notes" defaultValue={editingInvoice?.notes || invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} className="mt-1 bg-input/50"/></div>
                 <Separator />
                  <Label className="text-lg font-medium">بنود الفاتورة</Label>
                 {currentInvoiceItems.map((item, index) => (
@@ -586,14 +736,80 @@ const PurchasingPage = () => {
                 <Separator />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div className="md:col-span-2 space-y-1 pt-4">
-                        <p className="text-md">المجموع الفرعي: <span className="font-semibold">{invoiceSubTotal.toFixed(2)} ل.س</span></p>
+                        <p className="text-md">المجموع الفرعي (للعرض فقط): <span className="font-semibold">{invoiceSubTotal.toFixed(2)} ل.س</span></p>
                     </div>
                     <div><Label htmlFor="inv-tax">مبلغ الضريبة</Label><Input id="inv-tax" name="inv-tax" type="number" value={invoiceTaxAmount} onChange={(e) => setInvoiceTaxAmount(parseFloat(e.target.value) || 0)} step="0.01" className="mt-1 bg-input/50"/></div>
                 </div>
                  <div className="text-right font-semibold text-lg">الإجمالي الكلي للفاتورة: <span className="font-headline text-primary">{invoiceGrandTotal.toFixed(2)} ل.س</span></div>
-                 {editingInvoice && <p className="text-xs text-muted-foreground">ملاحظة: تحديث المخزون عند تعديل فاتورة شراء حالياً لا يعيد حساب الفروقات في كميات البنود. يتم تحديث المخزون بشكل أساسي عند إنشاء فاتورة جديدة. لضمان دقة المخزون عند التعديل، يتطلب الأمر منطقاً متقدماً (يفضل عبر وظائف خلفية أو trigger في قاعدة البيانات).</p>}
+                 {editingInvoice && <p className="text-xs text-muted-foreground">ملاحظة: تحديث المخزون عند تعديل فاتورة شراء حالياً لا يعيد حساب الفروقات في كميات البنود. يتم تحديث المخزون بشكل أساسي عند إنشاء فاتورة جديدة. لضمان دقة المخزون عند التعديل، يتطلب الأمر منطقاً متقدماً.</p>}
 
               <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoadingProducts || isLoadingSuppliers || currentInvoiceItems.some(item => !item.product_id)}>حفظ الفاتورة</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Expense Modal */}
+        <Dialog open={isExpenseModalOpen} onOpenChange={(isOpen) => { setIsExpenseModalOpen(isOpen); if (!isOpen) setEditingExpense(undefined); }}>
+          <DialogContent className="sm:max-w-lg bg-card">
+            <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingExpense ? 'تعديل المصروف' : 'إضافة مصروف جديد'}</DialogTitle></DialogHeader>
+            <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                const fd = new FormData(e.currentTarget); 
+                handleSaveExpense({
+                    id: editingExpense?.id,
+                    description: fd.get('exp-description') as string,
+                    amount: parseFloat(fd.get('exp-amount') as string),
+                    expense_date: fd.get('exp-date') as string,
+                    category: fd.get('exp-category') as Expense['category'],
+                });
+            }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+              <div><Label htmlFor="exp-description">وصف المصروف</Label><Input id="exp-description" name="exp-description" defaultValue={editingExpense?.description} required className="mt-1 bg-input/50"/></div>
+              <div><Label htmlFor="exp-amount">المبلغ</Label><Input id="exp-amount" name="exp-amount" type="number" step="0.01" defaultValue={editingExpense?.amount.toString()} required className="mt-1 bg-input/50"/></div>
+              <div>
+                <Label htmlFor="exp-date">تاريخ المصروف</Label>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                        variant={"outline"}
+                        className={cn("w-full justify-start text-right font-normal mt-1 bg-input/50 hover:bg-input/70", !((editingExpense?.expense_date && new Date(editingExpense.expense_date)) || (e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement)?.value) && "text-muted-foreground")}
+                        >
+                        <CalendarIcon className="ml-2 h-4 w-4" />
+                        {(editingExpense?.expense_date && new Date(editingExpense.expense_date)) ? 
+                            format(new Date(editingExpense.expense_date), "PPP", { locale: arSA }) : 
+                            (e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement)?.value ? 
+                            format(new Date((e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement).value), "PPP", { locale: arSA }) :
+                            <span>اختر تاريخًا</span>
+                        }
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                        <Calendar
+                        mode="single"
+                        selected={(editingExpense?.expense_date ? new Date(editingExpense.expense_date) : undefined)}
+                        onSelect={(date) => {
+                            const target = e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement;
+                            if (target) target.value = date ? format(date, 'yyyy-MM-dd') : '';
+                            // Manually update state for editingExpense if needed, or rely on form submission
+                            if (editingExpense && date) setEditingExpense({...editingExpense, expense_date: format(date, 'yyyy-MM-dd')});
+                            else if (date && !editingExpense) { /* handle new expense date selection if needed directly in state */ }
+                        }}
+                        defaultMonth={editingExpense?.expense_date ? new Date(editingExpense.expense_date) : new Date()}
+                        initialFocus
+                        dir="rtl"
+                        locale={arSA}
+                        />
+                    </PopoverContent>
+                </Popover>
+                <Input id="exp-date" name="exp-date" type="hidden" defaultValue={editingExpense?.expense_date || new Date().toISOString().split('T')[0]} />
+              </div>
+              <div>
+                <Label htmlFor="exp-category">فئة المصروف</Label>
+                <Select name="exp-category" defaultValue={editingExpense?.category || expenseCategories[0]} required dir="rtl">
+                  <SelectTrigger id="exp-category" className="mt-1 bg-input/50"><SelectValue placeholder="اختر فئة المصروف" /></SelectTrigger>
+                  <SelectContent>{expenseCategories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ المصروف</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -605,3 +821,4 @@ const PurchasingPage = () => {
 
 export default PurchasingPage;
     
+
