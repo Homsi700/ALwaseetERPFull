@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 
 const MOCK_PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
+const ALL_ITEMS_FILTER_VALUE = "__ALL_ITEMS_FILTER_VALUE__";
 
 const chartConfig = {
   sales: { label: "المبيعات (ل.س)", color: "hsl(var(--chart-1))" },
@@ -114,6 +115,11 @@ const FinancialReportsPage = () => {
         if (dateRange?.from) query = query.gte('sale_date', fromDate);
         if (dateRange?.to) query = query.lte('sale_date', toDate);
         
+        // Apply client filter if selected and not "ALL"
+        if (selectedClientFilter && selectedClientFilter !== ALL_ITEMS_FILTER_VALUE) {
+            query = query.eq('client_id', selectedClientFilter);
+        }
+
         const { data, error } = await query;
         if (error) throw error;
 
@@ -132,7 +138,7 @@ const FinancialReportsPage = () => {
 
         setSalesSummaryData(formattedSalesData);
         if (formattedSalesData.length === 0) {
-            toast({ title: "لا توجد بيانات مبيعات", description: "لم يتم العثور على مبيعات للفترة المحددة."});
+            toast({ title: "لا توجد بيانات مبيعات", description: "لم يتم العثور على مبيعات للفترة والمعايير المحددة."});
         }
       } catch (error: any) {
         toast({ title: `خطأ في جلب ملخص المبيعات`, description: error.message, variant: 'destructive'});
@@ -141,7 +147,7 @@ const FinancialReportsPage = () => {
     } else if (reportType === "inventory_status") {
        try {
         let query = supabase.from('products').select('category, id');
-        if (selectedCategoryFilter) {
+        if (selectedCategoryFilter && selectedCategoryFilter !== ALL_ITEMS_FILTER_VALUE) {
             query = query.eq('category', selectedCategoryFilter);
         }
         const { data, error } = await query;
@@ -154,7 +160,7 @@ const FinancialReportsPage = () => {
         });
         setInventoryStatusData(Object.entries(categoryData).map(([name, count]) => ({name, products: count})));
         if (Object.keys(categoryData).length === 0) {
-             toast({ title: "لا توجد بيانات للمخزون", description: "لم يتم العثور على منتجات لعرض حالة المخزون."});
+             toast({ title: "لا توجد بيانات للمخزون", description: "لم يتم العثور على منتجات للمعايير المحددة."});
         }
        } catch (error: any) {
         toast({ title: `خطأ في جلب حالة المخزون`, description: error.message, variant: 'destructive'});
@@ -165,6 +171,10 @@ const FinancialReportsPage = () => {
             let query = supabase.from('sales').select('sale_date, total_amount');
             if (dateRange?.from) query = query.gte('sale_date', fromDate);
             if (dateRange?.to) query = query.lte('sale_date', toDate);
+            
+            if (selectedClientFilter && selectedClientFilter !== ALL_ITEMS_FILTER_VALUE) {
+                query = query.eq('client_id', selectedClientFilter);
+            }
 
             const { data, error } = await query;
             if (error) throw error;
@@ -176,13 +186,14 @@ const FinancialReportsPage = () => {
                 setAverageOrderValueData([{ name: "الفترة المحددة", averageOrderValue: avgOrderValue}]);
             } else {
                 setAverageOrderValueData([]);
-                 toast({ title: "لا توجد بيانات لحساب متوسط قيمة الطلب", description: "لم يتم العثور على مبيعات للفترة المحددة."});
+                 toast({ title: "لا توجد بيانات لحساب متوسط قيمة الطلب", description: "لم يتم العثور على مبيعات للفترة والمعايير المحددة."});
             }
         } catch (error: any) {
             toast({ title: `خطأ في جلب متوسط قيمة الطلب`, description: error.message, variant: 'destructive'});
             setAverageOrderValueData([]);
         }
     } else {
+        // Mock data for other report types, with a toast indicating they are under development
         setProfitLossData([ 
             { month: 'يناير', revenue: 5000, cogs: 2000, expenses: 1000, netProfit: 2000 },
             { month: 'فبراير', revenue: 6000, cogs: 2500, expenses: 1200, netProfit: 2300 },
@@ -194,11 +205,11 @@ const FinancialReportsPage = () => {
         if(reportType !== "sales_summary") setSalesSummaryData([]);
         if(reportType !== "inventory_status") setInventoryStatusData([]);
         if(reportType !== "average_order_value") setAverageOrderValueData([]);
-        toast({ title: "التقرير قيد التطوير", description: `التقارير المتقدمة مثل "${reportTypeLabelMap[reportType]}" تتطلب تجميع بيانات معقد في الواجهة الخلفية (Supabase Views/Functions). يتم عرض بيانات وهمية أو مبسطة حالياً.`});
+        toast({ title: "التقرير قيد التطوير", description: `التقارير المتقدمة مثل "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap]}" تتطلب تجميع بيانات معقد. يتم عرض بيانات وهمية أو مبسطة حالياً.`});
     }
 
     setIsLoadingReportData(false);
-  }, [user, reportType, dateRange, toast, selectedCategoryFilter]);
+  }, [user, reportType, dateRange, toast, selectedCategoryFilter, selectedClientFilter, selectedSupplierFilter]); // Added selectedClientFilter and selectedSupplierFilter
 
   useEffect(() => {
     if(user) fetchReportData();
@@ -237,7 +248,14 @@ const FinancialReportsPage = () => {
   const handleExportReport = () => {
     toast({ title: "بدء تصدير التقرير", description: `جاري تجهيز تقرير "${reportTypeLabelMap[reportType as keyof typeof reportTypeLabelMap] || reportType}" للتصدير...` });
     setTimeout(() => {
-      const dataToExport = reportType === "sales_summary" ? salesSummaryData : reportType === "inventory_status" ? inventoryStatusData : [];
+      let dataToExport: any[] = [];
+      if (reportType === "sales_summary") dataToExport = salesSummaryData;
+      else if (reportType === "inventory_status") dataToExport = inventoryStatusData;
+      else if (reportType === "average_order_value") dataToExport = averageOrderValueData;
+      else if (reportType === "profit_loss") dataToExport = profitLossData; // Example for mock data export
+      else if (reportType === "customer_activity") dataToExport = customerActivityData; // Example for mock data export
+
+
       if (dataToExport.length > 0) {
         const csvContent = "data:text/csv;charset=utf-8," 
             + Object.keys(dataToExport[0]).join(",") + "\n" 
@@ -251,7 +269,7 @@ const FinancialReportsPage = () => {
         document.body.removeChild(link);
         toast({ title: "اكتمل التصدير", description: "تم تصدير التقرير كملف CSV." });
       } else {
-        toast({ title: "فشل التصدير", description: "لا توجد بيانات لتصديرها.", variant: "destructive" });
+        toast({ title: "فشل التصدير", description: "لا توجد بيانات لتصديرها لهذا التقرير.", variant: "destructive" });
       }
     }, 1000);
   };
@@ -281,7 +299,7 @@ const FinancialReportsPage = () => {
               <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
             </BarChart>
           </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة المحددة.</p>;
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة والمعايير المحددة.</p>;
       case "profit_loss":
         return profitLossData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
@@ -310,7 +328,7 @@ const FinancialReportsPage = () => {
               <Legend content={<ChartLegendContent nameKey="name" />} />
             </RechartsPieChart>
           </ChartContainer>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون (حسب الفئة).</p>;
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لحالة المخزون للمعايير المحددة.</p>;
       case "customer_activity":
          return customerActivityData.length > 0 ? (
           <ChartContainer config={chartConfig} className="w-full h-full">
@@ -332,9 +350,9 @@ const FinancialReportsPage = () => {
                 <div className="text-4xl font-bold text-foreground">
                     {averageOrderValueData[0].averageOrderValue.toFixed(2)} ل.س
                 </div>
-                <CardDescription className="mt-1">خلال الفترة المحددة</CardDescription>
+                <CardDescription className="mt-1">خلال الفترة والمعايير المحددة</CardDescription>
             </Card>
-        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات كافية لعرض متوسط قيمة الطلب للفترة المحددة.</p>;
+        ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات كافية لعرض متوسط قيمة الطلب للفترة والمعايير المحددة.</p>;
       default:
         return (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -425,25 +443,34 @@ const FinancialReportsPage = () => {
                   <Label htmlFor="filterCategory">تصفية حسب الفئة (تؤثر على تقرير حالة المخزون)</Label>
                   <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter} dir="rtl">
                     <SelectTrigger id="filterCategory" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الفئات" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل الفئات</SelectItem>{filterCategories.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      <SelectItem value={ALL_ITEMS_FILTER_VALUE}>كل الفئات</SelectItem>
+                      {filterCategories.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="filterClient">تصفية حسب العميل (واجهة فقط)</Label>
+                  <Label htmlFor="filterClient">تصفية حسب العميل (تؤثر على ملخص المبيعات ومتوسط قيمة الطلب)</Label>
                   <Select value={selectedClientFilter} onValueChange={setSelectedClientFilter} dir="rtl">
                     <SelectTrigger id="filterClient" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل العملاء" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل العملاء</SelectItem>{filterClients.map(client => <SelectItem key={client.value} value={client.value}>{client.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      <SelectItem value={ALL_ITEMS_FILTER_VALUE}>كل العملاء</SelectItem>
+                      {filterClients.map(client => <SelectItem key={client.value} value={client.value}>{client.label}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="filterSupplier">تصفية حسب المورد (واجهة فقط)</Label>
+                  <Label htmlFor="filterSupplier">تصفية حسب المورد (واجهة فقط حالياً)</Label>
                   <Select value={selectedSupplierFilter} onValueChange={setSelectedSupplierFilter} dir="rtl">
                     <SelectTrigger id="filterSupplier" className="mt-1 bg-input/50 focus:bg-input"><SelectValue placeholder="كل الموردين" /></SelectTrigger>
-                    <SelectContent><SelectItem value="">كل الموردين</SelectItem>{filterSuppliers.map(sup => <SelectItem key={sup.value} value={sup.value}>{sup.label}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                       <SelectItem value={ALL_ITEMS_FILTER_VALUE}>كل الموردين</SelectItem>
+                       {filterSuppliers.map(sup => <SelectItem key={sup.value} value={sup.value}>{sup.label}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </div>
             </div>
-             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: خيارات التصفية المتقدمة (حسب العميل، المورد) هي واجهة فقط حالياً. تصفية الفئة تؤثر على تقرير حالة المخزون. تفعيل التصفية الكاملة يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية.</p>
+             <p className="text-xs text-muted-foreground lg:col-span-3 pt-2">ملاحظة: تصفية المورد هي واجهة فقط حالياً. تفعيل التصفية الكاملة يتطلب ربطها بمنطق تجميع بيانات في الواجهة الخلفية.</p>
           </CardContent>
         </Card>
 
@@ -465,6 +492,8 @@ const FinancialReportsPage = () => {
           </CardContent>
           <CardFooter className="text-xs text-muted-foreground border-t pt-3">
             البيانات المعروضة للفترة من {dateRange?.from ? format(dateRange.from, "PPP", {locale:arSA}) : "غير محدد"} إلى {dateRange?.to ? format(dateRange.to, "PPP", {locale:arSA}) : "غير محدد"}.
+            {selectedCategoryFilter && selectedCategoryFilter !== ALL_ITEMS_FILTER_VALUE && ` الفئة: ${filterCategories.find(c=>c.value===selectedCategoryFilter)?.label || selectedCategoryFilter}.`}
+            {selectedClientFilter && selectedClientFilter !== ALL_ITEMS_FILTER_VALUE && ` العميل: ${filterClients.find(c=>c.value===selectedClientFilter)?.label || selectedClientFilter}.`}
           </CardFooter>
         </Card>
 
@@ -537,3 +566,4 @@ const FinancialReportsPage = () => {
 
 export default FinancialReportsPage;
     
+
