@@ -27,6 +27,7 @@ import { CalendarIcon } from 'lucide-react';
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { arSA } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 
 interface Supplier {
@@ -57,7 +58,6 @@ interface PurchaseInvoice {
   supplier_name?: string; 
   invoice_date: string;
   due_date?: string;
-  // items array is handled via purchase_invoice_items table
   tax_amount: number;
   grand_total: number;
   status: 'غير مدفوعة' | 'مدفوعة جزئياً' | 'مدفوعة بالكامل' | 'متأخرة';
@@ -110,7 +110,6 @@ const mapFromSupabaseInvoice = (data: any, supplierName?: string, items?: Purcha
     grand_total: data.grand_total,
     status: data.status,
     notes: data.notes,
-    // items are fetched separately
 });
 
 const mapFromSupabaseExpense = (data: any): Expense => ({
@@ -146,6 +145,8 @@ const PurchasingPage = () => {
   const [currentInvoiceItems, setCurrentInvoiceItems] = useState<PurchaseItem[]>([]);
   const [invoiceTaxAmount, setInvoiceTaxAmount] = useState<number>(0);
   const [invoiceNotes, setInvoiceNotes] = useState<string>('');
+
+  const [expenseDate, setExpenseDate] = useState<Date | undefined>(undefined);
 
 
   const { toast } = useToast();
@@ -328,6 +329,9 @@ const PurchasingPage = () => {
   };
 
   const handleDeleteInvoice = async (id: string) => { 
+    // Note: Deleting a purchase invoice ideally should offer an option to revert stock changes,
+    // but this is complex and beyond current scope. Stock will remain as updated during invoice creation.
+    console.warn(`Deleting purchase invoice ${id}. Stock will not be automatically reverted.`);
     try {
         const { error: itemError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', id);
         if(itemError) throw itemError;
@@ -343,7 +347,7 @@ const PurchasingPage = () => {
   };
 
   const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> & {items?: PurchaseItem[]}) => {
-    const subTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
+    const subTotalCalculated = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
     const taxAmount = formData.tax_amount || 0; 
     
     const mainInvoiceData = {
@@ -351,21 +355,23 @@ const PurchasingPage = () => {
         supplier_id: formData.supplier_id,
         invoice_date: formData.invoice_date,
         due_date: formData.due_date || null,
-        // sub_total is not saved directly to purchase_invoices table
         tax_amount: taxAmount,
-        grand_total: subTotal + taxAmount,
+        grand_total: subTotalCalculated + taxAmount,
         status: formData.status,
         notes: formData.notes || null,
     };
 
     try {
         if (editingInvoice && editingInvoice.id) {
+            // Update existing invoice
             const { error: updateError } = await supabase.from('purchase_invoices').update(mainInvoiceData).eq('id', editingInvoice.id);
             if (updateError) throw updateError;
 
+            // Delete old items
             const { error: deleteItemsError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', editingInvoice.id);
             if (deleteItemsError) throw deleteItemsError;
 
+            // Insert new/updated items
             if (currentInvoiceItems.length > 0) {
                 const itemsToInsert = currentInvoiceItems.map(item => ({
                     purchase_invoice_id: editingInvoice.id,
@@ -379,15 +385,16 @@ const PurchasingPage = () => {
             }
             toast({ title: 'تم تحديث الفاتورة'});
             // Stock is not updated on invoice edit as per previous discussions to avoid complexity.
-            // A comment can be added here if needed.
             console.warn("Stock not updated on invoice edit. This requires advanced logic for calculating differences.");
         } else { // New Invoice
+            // Insert new invoice
             const { data: newInvoice, error: insertError } = await supabase.from('purchase_invoices').insert(mainInvoiceData).select().single();
             if (insertError) throw insertError;
             if (!newInvoice) throw new Error("Failed to create new invoice record.");
 
             const newInvoiceId = newInvoice.id;
 
+            // Insert items for new invoice
             if (currentInvoiceItems.length > 0) {
                 const itemsToInsert = currentInvoiceItems.map(item => ({
                     purchase_invoice_id: newInvoiceId,
@@ -400,6 +407,7 @@ const PurchasingPage = () => {
                 if (insertItemsError) throw insertItemsError;
             }
 
+            // Update stock for new invoice items
             for (const item of currentInvoiceItems) {
                 const product = availableProducts.find(p => p.id === item.product_id);
                 if (product) {
@@ -416,7 +424,7 @@ const PurchasingPage = () => {
                 }
             }
             toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-            await fetchProductsForForm(); 
+            await fetchProductsForForm(); // Refetch products to update stock display
         }
         fetchInvoices();
         setIsInvoiceModalOpen(false);
@@ -448,8 +456,8 @@ const PurchasingPage = () => {
   const addInvoiceItem = () => setCurrentInvoiceItems([...currentInvoiceItems, { product_id: '', productName: '', quantity: 1, unit_price: 0, total_price: 0 }]);
   const removeInvoiceItem = (index: number) => setCurrentInvoiceItems(currentInvoiceItems.filter((_, i) => i !== index));
 
-  const handleAddExpense = () => { setEditingExpense(undefined); setIsExpenseModalOpen(true);};
-  const handleEditExpense = (expense: Expense) => { setEditingExpense(expense); setIsExpenseModalOpen(true);};
+  const handleAddExpense = () => { setEditingExpense(undefined); setExpenseDate(new Date()); setIsExpenseModalOpen(true);};
+  const handleEditExpense = (expense: Expense) => { setEditingExpense(expense); setExpenseDate(new Date(expense.expense_date)); setIsExpenseModalOpen(true);};
   const handleDeleteExpense = async (id: string) => {
     try {
         const { error } = await supabase.from('expenses').delete().eq('id', id);
@@ -485,6 +493,7 @@ const PurchasingPage = () => {
         fetchExpenses();
         setIsExpenseModalOpen(false);
         setEditingExpense(undefined);
+        setExpenseDate(undefined);
     } catch (error: any) {
         toast({ title: 'خطأ في حفظ المصروف', description: error.message, variant: 'destructive' });
     }
@@ -749,58 +758,48 @@ const PurchasingPage = () => {
         </Dialog>
 
         {/* Expense Modal */}
-        <Dialog open={isExpenseModalOpen} onOpenChange={(isOpen) => { setIsExpenseModalOpen(isOpen); if (!isOpen) setEditingExpense(undefined); }}>
+        <Dialog open={isExpenseModalOpen} onOpenChange={(isOpen) => { setIsExpenseModalOpen(isOpen); if (!isOpen) {setEditingExpense(undefined); setExpenseDate(undefined); } }}>
           <DialogContent className="sm:max-w-lg bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingExpense ? 'تعديل المصروف' : 'إضافة مصروف جديد'}</DialogTitle></DialogHeader>
             <form onSubmit={(e) => { 
                 e.preventDefault(); 
                 const fd = new FormData(e.currentTarget); 
+                const formattedDate = expenseDate ? format(expenseDate, 'yyyy-MM-dd') : new Date().toISOString().split('T')[0];
                 handleSaveExpense({
                     id: editingExpense?.id,
                     description: fd.get('exp-description') as string,
                     amount: parseFloat(fd.get('exp-amount') as string),
-                    expense_date: fd.get('exp-date') as string,
+                    expense_date: formattedDate,
                     category: fd.get('exp-category') as Expense['category'],
                 });
             }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
               <div><Label htmlFor="exp-description">وصف المصروف</Label><Input id="exp-description" name="exp-description" defaultValue={editingExpense?.description} required className="mt-1 bg-input/50"/></div>
               <div><Label htmlFor="exp-amount">المبلغ</Label><Input id="exp-amount" name="exp-amount" type="number" step="0.01" defaultValue={editingExpense?.amount.toString()} required className="mt-1 bg-input/50"/></div>
               <div>
-                <Label htmlFor="exp-date">تاريخ المصروف</Label>
+                <Label htmlFor="exp-date-display">تاريخ المصروف</Label>
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button
+                        id="exp-date-display"
                         variant={"outline"}
-                        className={cn("w-full justify-start text-right font-normal mt-1 bg-input/50 hover:bg-input/70", !((editingExpense?.expense_date && new Date(editingExpense.expense_date)) || (e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement)?.value) && "text-muted-foreground")}
+                        className={cn("w-full justify-start text-right font-normal mt-1 bg-input/50 hover:bg-input/70", !expenseDate && "text-muted-foreground")}
                         >
                         <CalendarIcon className="ml-2 h-4 w-4" />
-                        {(editingExpense?.expense_date && new Date(editingExpense.expense_date)) ? 
-                            format(new Date(editingExpense.expense_date), "PPP", { locale: arSA }) : 
-                            (e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement)?.value ? 
-                            format(new Date((e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement).value), "PPP", { locale: arSA }) :
-                            <span>اختر تاريخًا</span>
-                        }
+                        {expenseDate ? format(expenseDate, "PPP", { locale: arSA }) : <span>اختر تاريخًا</span>}
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                         <Calendar
                         mode="single"
-                        selected={(editingExpense?.expense_date ? new Date(editingExpense.expense_date) : undefined)}
-                        onSelect={(date) => {
-                            const target = e.currentTarget.form?.elements.namedItem('exp-date') as HTMLInputElement;
-                            if (target) target.value = date ? format(date, 'yyyy-MM-dd') : '';
-                            // Manually update state for editingExpense if needed, or rely on form submission
-                            if (editingExpense && date) setEditingExpense({...editingExpense, expense_date: format(date, 'yyyy-MM-dd')});
-                            else if (date && !editingExpense) { /* handle new expense date selection if needed directly in state */ }
-                        }}
-                        defaultMonth={editingExpense?.expense_date ? new Date(editingExpense.expense_date) : new Date()}
+                        selected={expenseDate}
+                        onSelect={setExpenseDate}
+                        defaultMonth={expenseDate || new Date()}
                         initialFocus
                         dir="rtl"
                         locale={arSA}
                         />
                     </PopoverContent>
                 </Popover>
-                <Input id="exp-date" name="exp-date" type="hidden" defaultValue={editingExpense?.expense_date || new Date().toISOString().split('T')[0]} />
               </div>
               <div>
                 <Label htmlFor="exp-category">فئة المصروف</Label>
