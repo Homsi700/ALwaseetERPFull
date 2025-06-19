@@ -203,7 +203,7 @@ const PosPage = () => {
     }
 
     setIsProcessingCartAction(false);
-  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductState, fetchProducts]);
+  }, [cart, toast, availableProducts, isProcessingCartAction, fetchProducts]);
 
   const handleProductSelection = useCallback((product: Product) => {
     const productInState = availableProducts.find(p => p.id === product.id);
@@ -270,7 +270,7 @@ const PosPage = () => {
     setWeightInputValue('');
     setIsProcessingCartAction(false);
     barcodeInputRef.current?.focus();
-  }, [productToWeigh, weightInputValue, toast, addProductToCart, cart, availableProducts, isProcessingCartAction, updateProductState]);
+  }, [productToWeigh, weightInputValue, toast, addProductToCart, cart, availableProducts, isProcessingCartAction]);
 
   const handleDirectAddWeighedProduct = useCallback(async () => {
     if (!selectedDirectWeighProduct || !directWeightInput || isProcessingCartAction) return;
@@ -364,7 +364,7 @@ const PosPage = () => {
         toast({ title: "تم تحديث الكمية", description: `تم تحديث كمية ${item.name} في السلة.`});
     }
     setIsProcessingCartAction(false);
-  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductState]);
+  }, [cart, toast, availableProducts, isProcessingCartAction]);
 
   const removeFromCart = useCallback(async (productId: string, isWeighedItem: boolean) => {
     if (isProcessingCartAction) return;
@@ -397,7 +397,7 @@ const PosPage = () => {
     setCart(prevCart => prevCart.filter(item => !(item.id === productId && item.isWeighed === isWeighedItem) ));
     toast({ title: "تمت إزالة المنتج", description: "تمت إزالة المنتج من السلة واسترجاع المخزون." });
     setIsProcessingCartAction(false);
-  }, [toast, cart, availableProducts, isProcessingCartAction, updateProductState]);
+  }, [toast, cart, availableProducts, isProcessingCartAction]);
 
   const subTotal = useMemo(() => 
     cart.reduce((sum, item) => sum + item.totalItemPrice, 0),
@@ -510,7 +510,7 @@ const PosPage = () => {
       barcodeInputRef.current?.focus();
     } catch (error: any) {
       console.error("خطأ أثناء الدفع:", error);
-      toast({ icon: <XCircle className="text-red-500" />, title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع. المخزون قد تم تحديثه بالفعل مع تعديلات السلة.", variant: "destructive"});
+      toast({ icon: <XCircle className="text-red-500" />, title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع.", variant: "destructive"});
     } finally {
         setIsProcessingCartAction(false);
     }
@@ -665,7 +665,7 @@ const PosPage = () => {
         
         <Card className="lg:col-span-3 shadow-lg flex flex-col h-full">
           <CardHeader className="flex-shrink-0 pb-2 pt-3 px-4 flex flex-row justify-between items-center border-b">
-            <CardTitle className="font-headline text-lg text-foreground flex items-center"><ShoppingBasket className="ml-2 h-5 w-5 text-primary"/>السلة الحالية</CardTitle>
+            <CardTitle className="font-headline text-lg text-foreground flex items-center"><ShoppingBasket className="mr-2 h-5 w-5 text-primary"/>السلة الحالية</CardTitle>
             {cart.length > 0 && <Badge variant="secondary" className="text-sm">{cart.length} أصناف</Badge>}
           </CardHeader>
           
@@ -681,9 +681,9 @@ const PosPage = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="py-2 px-3 w-[40%]">المنتج</TableHead>
-                    <TableHead className="text-center py-2 px-2 w-[35%]">الكمية/الوزن (مخزون: {cart.length > 0 && cart.find(item => item.id === cart[0].id) ? (availableProducts.find(p=>p.id===cart[0].id)?.stock ?? 0) : 0})</TableHead>
+                    <TableHead className="text-center py-2 px-2 w-[30%]">الكمية/الوزن</TableHead>
                     <TableHead className="text-left py-2 px-2 w-[20%]">السعر الإجمالي</TableHead>
-                    <TableHead className="py-2 px-1 w-[5%]"></TableHead>
+                    <TableHead className="py-2 px-1 w-[10%] text-left"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -733,7 +733,7 @@ const PosPage = () => {
                         <TableCell className="text-left font-semibold text-foreground text-xs py-2 px-2">
                           {item.totalItemPrice.toFixed(2)} ل.س
                         </TableCell>
-                        <TableCell className="py-2 px-1">
+                        <TableCell className="py-2 px-1 text-left">
                           <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive/80" onClick={() => removeFromCart(item.id, item.isWeighed)} disabled={isProcessingCartAction}> <Trash2 className="h-3.5 w-3.5" /> </Button>
                         </TableCell>
                       </TableRow>
@@ -744,38 +744,42 @@ const PosPage = () => {
             </ScrollArea>
           </CardContent>
           <Separator className="my-0" />
-          <CardFooter className="flex-shrink-0 p-3 space-y-2 border-t">
-            <div className="flex justify-between items-center text-sm">
+          <CardFooter className="flex-shrink-0 p-3 flex flex-col gap-2 border-t">
+            <div className="flex justify-between items-center w-full text-sm">
               <span className="text-muted-foreground">المجموع الفرعي:</span>
               <span className="font-semibold text-foreground">{subTotal.toFixed(2)} ل.س</span>
             </div>
 
             {discountAmount > 0 && (
-               <div className="flex justify-between items-center text-sm text-destructive">
-                <span className="flex items-center"><MinusCircle className="ml-1 h-3.5 w-3.5"/>الخصم:</span>
+               <div className="flex justify-between items-center w-full text-sm text-destructive">
+                <span className="flex items-center"><MinusCircle className="mr-1 h-3.5 w-3.5"/>الخصم:</span>
                 <span className="font-semibold">-{discountAmount.toFixed(2)} ل.س</span>
               </div>
             )}
             
-            <div className="flex justify-between items-center text-lg font-semibold border-t pt-2 mt-1">
+            <div className="flex justify-between items-center w-full text-lg font-semibold border-t pt-2 mt-1">
               <span className="text-muted-foreground">الإجمالي:</span>
-              <span className="font-headline text-xl text-primary">{cartTotal.toFixed(2)} ل.س</span>
+              <span className="font-headline text-xl font-bold text-purple-600">{cartTotal.toFixed(2)} ل.س</span>
             </div>
-            <div className="flex gap-2 mt-2">
-                <Button 
-                    variant="outline" 
-                    className="flex-1 text-sm h-10" 
-                    onClick={() => { setDiscountInput(discountAmount > 0 ? discountAmount.toString() : ''); setIsDiscountModalOpen(true);}}
-                    disabled={isProcessingCartAction || cart.length === 0}
-                >
-                    <Percent className="ml-1.5 h-4 w-4"/> {discountAmount > 0 ? 'تعديل الخصم' : 'إضافة خصم'}
-                </Button>
-            </div>
-            <Button className="w-full text-lg py-3 h-auto bg-purple-600 hover:bg-purple-700 text-primary-foreground mt-2" onClick={handleCheckout} disabled={cart.length === 0 || isProcessingCartAction || isLoadingProducts}>
+            
+            <Button 
+                variant="outline" 
+                className="w-full text-sm h-10" 
+                onClick={() => { setDiscountInput(discountAmount > 0 ? discountAmount.toString() : ''); setIsDiscountModalOpen(true);}}
+                disabled={isProcessingCartAction || cart.length === 0}
+            >
+                <Percent className="mr-1.5 h-4 w-4"/> {discountAmount > 0 ? 'تعديل الخصم' : 'إضافة خصم'}
+            </Button>
+            
+            <Button 
+                className="w-full text-base py-2 h-11 bg-purple-600 hover:bg-purple-700 text-primary-foreground" 
+                onClick={handleCheckout} 
+                disabled={cart.length === 0 || isProcessingCartAction || isLoadingProducts}
+            >
               {isProcessingCartAction && cart.length > 0 ? (
                  <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2"></div>
               ) : (
-                <CreditCard className="ml-2 h-5 w-5" />
+                <CreditCard className="mr-2 h-5 w-5" />
               )}
               {isProcessingCartAction && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن (حفظ الفاتورة)'}
             </Button>
@@ -818,7 +822,7 @@ const PosPage = () => {
                          <div className="p-1.5 bg-primary/10 rounded-md text-center mt-1">
                             <p className="text-[0.7rem] text-muted-foreground">السعر المحسوب</p>
                             <p className="text-md font-semibold text-primary">
-                                { (productToWeigh.pricePerUnit * Math.min(parseFloat(weightInputValue), (availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock))).toFixed(2) } ل.س
+                                { (productToWeigh.pricePerUnit * Math.min(parseFloat(weightInputValue) || 0, (availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock))).toFixed(2) } ل.س
                             </p>
                         </div>
                     )}
@@ -830,7 +834,7 @@ const PosPage = () => {
                     <DialogClose asChild>
                       <Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button>
                     </DialogClose>
-                </DialogFooter>
+                  </DialogFooter>
               </form>
             )}
         </DialogContent>
@@ -855,9 +859,9 @@ const PosPage = () => {
             </div>
             <DialogFooter className="mt-2 pt-2 border-t">
                 <Button type="submit" className="bg-accent hover:bg-accent/90 text-accent-foreground h-9 text-sm">تطبيق الخصم</Button>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button>
-                </DialogClose>
+                 <DialogClose asChild>
+                    <Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button>
+                 </DialogClose>
             </DialogFooter>
             </form>
         </DialogContent>
