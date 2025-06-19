@@ -35,7 +35,8 @@ interface Supplier {
   notes?: string;
 }
 
-interface PurchaseItem { // Renamed from PurchaseOrderItem for clarity
+interface PurchaseItem { 
+  id?: string; // ID from purchase_invoice_items if editing/displaying
   product_id: string;
   productName?: string; 
   quantity: number;
@@ -79,19 +80,6 @@ const mapFromSupabaseSupplier = (data: any): Supplier => ({
   notes: data.notes,
 });
 
-
-const mapToSupabaseInvoice = (inv: Omit<PurchaseInvoice, 'id' | 'created_at' | 'supplier_name'> & {id?:string}) => ({
-    invoice_number: inv.invoice_number,
-    supplier_id: inv.supplier_id,
-    invoice_date: inv.invoice_date,
-    due_date: inv.due_date,
-    items: inv.items.map(({ productName, ...item }) => item), 
-    sub_total: inv.sub_total,
-    tax_amount: inv.tax_amount,
-    grand_total: inv.grand_total,
-    status: inv.status,
-});
-
 const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoice => ({
     id: data.id,
     created_at: data.created_at,
@@ -100,7 +88,14 @@ const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoi
     supplier_name: supplierName || data.suppliers?.name || data.supplier_id, 
     invoice_date: data.invoice_date,
     due_date: data.due_date,
-    items: data.items || [],
+    items: (data.purchase_invoice_items || []).map((item: any) => ({
+        id: item.id, // ID of the purchase_invoice_item record
+        product_id: item.product_id,
+        productName: item.products?.name || 'منتج غير معروف',
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+    })),
     sub_total: data.sub_total,
     tax_amount: data.tax_amount,
     grand_total: data.grand_total,
@@ -150,8 +145,9 @@ const PurchasingPage = () => {
     try {
       const { data: invData, error: invError } = await supabase
         .from('purchase_invoices')
-        .select('*, suppliers(name)') 
+        .select('*, suppliers(name), purchase_invoice_items(*, products(id, name))') 
         .order('invoice_date', { ascending: false });
+
       if (invError) throw invError;
 
       const populatedInvoices = invData.map((inv: any) => mapFromSupabaseInvoice(inv, inv.suppliers?.name));
@@ -202,6 +198,24 @@ const PurchasingPage = () => {
   const handleEditSupplier = (supplier: Supplier) => { setEditingSupplier(supplier); setIsSupplierModalOpen(true); };
   const handleDeleteSupplier = async (id: string) => {
     try {
+      // Check if supplier is used in any purchase_invoices
+      const { data: invoicesWithSupplier, error: checkError } = await supabase
+        .from('purchase_invoices')
+        .select('id')
+        .eq('supplier_id', id)
+        .limit(1);
+
+      if (checkError) throw checkError;
+
+      if (invoicesWithSupplier && invoicesWithSupplier.length > 0) {
+        toast({
+          title: 'لا يمكن حذف المورد',
+          description: 'هذا المورد مستخدم في فاتورة شراء واحدة على الأقل. يرجى حذف الفواتير المرتبطة أولاً.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const { error } = await supabase.from('suppliers').delete().eq('id', id);
       if (error) throw error;
       fetchSuppliers();
@@ -218,8 +232,7 @@ const PurchasingPage = () => {
         if (error) throw error;
         toast({ title: 'تم تحديث المورد'});
       } else {
-        const {id, ...insertData} = supabaseData; 
-        const { error } = await supabase.from('suppliers').insert(insertData);
+        const { error } = await supabase.from('suppliers').insert([supabaseData]); // Supabase v2 expects an array for insert
         if (error) throw error;
         toast({ title: 'تمت إضافة مورد'});
       }
@@ -242,61 +255,104 @@ const PurchasingPage = () => {
     setInvoiceTaxAmount(invoice.tax_amount || 0);
     setIsInvoiceModalOpen(true); 
   };
+
   const handleDeleteInvoice = async (id: string) => { 
     try {
-        const { error } = await supabase.from('purchase_invoices').delete().eq('id', id);
-        if(error) throw error;
+        // First, delete items associated with the invoice
+        const { error: itemError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', id);
+        if(itemError) throw itemError;
+
+        // Then, delete the invoice itself
+        const { error: invoiceError } = await supabase.from('purchase_invoices').delete().eq('id', id);
+        if(invoiceError) throw invoiceError;
+
         fetchInvoices();
-        toast({ title: 'تم حذف الفاتورة'});
+        toast({ title: 'تم حذف الفاتورة وبنودها'});
     } catch(error: any) {
         toast({ title: 'خطأ في حذف الفاتورة', description: error.message, variant: 'destructive'});
     }
   };
-  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'> & { items: PurchaseItem[], tax_amount?: number, sub_total?: number, grand_total?: number}) => {
+
+  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'sub_total'|'grand_total'|'items'> & { items?: PurchaseItem[], tax_amount?: number, sub_total?: number, grand_total?: number}) => {
     const subTotal = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
     const taxAmount = formData.tax_amount || 0; 
-    const invoiceToSave: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> = {
-        ...formData,
+    
+    const mainInvoiceData = {
         invoice_number: formData.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
-        items: currentInvoiceItems,
+        supplier_id: formData.supplier_id,
+        invoice_date: formData.invoice_date,
+        due_date: formData.due_date || null,
         sub_total: subTotal,
         tax_amount: taxAmount,
         grand_total: subTotal + taxAmount,
+        status: formData.status,
     };
-    const supabaseData = mapToSupabaseInvoice(invoiceToSave);
 
     try {
         if (editingInvoice && editingInvoice.id) {
-            const { error } = await supabase.from('purchase_invoices').update(supabaseData).eq('id', editingInvoice.id);
-            if (error) throw error;
+            // 1. Update main invoice data
+            const { error: updateError } = await supabase.from('purchase_invoices').update(mainInvoiceData).eq('id', editingInvoice.id);
+            if (updateError) throw updateError;
+
+            // 2. Delete existing items for this invoice
+            const { error: deleteItemsError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', editingInvoice.id);
+            if (deleteItemsError) throw deleteItemsError;
+
+            // 3. Insert current items as new
+            if (currentInvoiceItems.length > 0) {
+                const itemsToInsert = currentInvoiceItems.map(item => ({
+                    purchase_invoice_id: editingInvoice.id,
+                    product_id: item.product_id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    total_price: item.total_price,
+                }));
+                const { error: insertItemsError } = await supabase.from('purchase_invoice_items').insert(itemsToInsert);
+                if (insertItemsError) throw insertItemsError;
+            }
             toast({ title: 'تم تحديث الفاتورة'});
-            // تحديث المخزون عند تعديل فاتورة شراء أمر معقد ويتطلب تتبع التغيرات في كميات البنود.
-            // حالياً، يتم تحديث المخزون فقط عند إنشاء فاتورة جديدة.
-            // لضمان دقة المخزون عند التعديل، يفضل استخدام وظائف قاعدة البيانات أو Triggers.
-            console.warn("Stock not updated on invoice edit. This requires advanced logic.");
-        } else {
-            const {id, ...insertData} = supabaseData;
-            const { data: newInvoice, error } = await supabase.from('purchase_invoices').insert(insertData).select().single();
-            if (error) throw error;
-            if (newInvoice) {
-                for (const item of currentInvoiceItems) {
-                    const product = availableProducts.find(p => p.id === item.product_id);
-                    if (product) {
-                         const { data: currentProductData, error: fetchError } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
-                         if(fetchError || !currentProductData) {
-                            toast({ title: `خطأ في جلب مخزون ${product.name}`, description: fetchError?.message, variant: 'destructive'});
-                            continue; 
-                         }
-                        const newStock = (currentProductData.stock || 0) + item.quantity;
-                        const { error: stockError } = await supabase.from('products').update({ stock: newStock }).eq('id', item.product_id);
-                        if (stockError) {
-                            toast({ title: `خطأ في تحديث مخزون ${product.name}`, description: stockError.message, variant: 'destructive'});
-                        }
+            // Stock is not updated on invoice edit as per previous discussions to avoid complexity.
+            // A comment can be added here if needed.
+            console.warn("Stock not updated on invoice edit. This requires advanced logic for calculating differences.");
+        } else { // New Invoice
+            // 1. Insert main invoice data
+            const { data: newInvoice, error: insertError } = await supabase.from('purchase_invoices').insert(mainInvoiceData).select().single();
+            if (insertError) throw insertError;
+            if (!newInvoice) throw new Error("Failed to create new invoice record.");
+
+            const newInvoiceId = newInvoice.id;
+
+            // 2. Insert items
+            if (currentInvoiceItems.length > 0) {
+                const itemsToInsert = currentInvoiceItems.map(item => ({
+                    purchase_invoice_id: newInvoiceId,
+                    product_id: item.product_id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    total_price: item.total_price,
+                }));
+                const { error: insertItemsError } = await supabase.from('purchase_invoice_items').insert(itemsToInsert);
+                if (insertItemsError) throw insertItemsError;
+            }
+
+            // 3. Update stock for each product
+            for (const item of currentInvoiceItems) {
+                const product = availableProducts.find(p => p.id === item.product_id);
+                if (product) {
+                    const { data: currentProductData, error: fetchError } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                    if(fetchError || !currentProductData) {
+                        toast({ title: `خطأ في جلب مخزون ${product.name}`, description: fetchError?.message, variant: 'destructive'});
+                        continue; 
+                    }
+                    const newStock = (currentProductData.stock || 0) + item.quantity;
+                    const { error: stockError } = await supabase.from('products').update({ stock: newStock }).eq('id', item.product_id);
+                    if (stockError) {
+                        toast({ title: `خطأ في تحديث مخزون ${product.name}`, description: stockError.message, variant: 'destructive'});
                     }
                 }
-                toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-                fetchProductsForForm(); 
             }
+            toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
+            await fetchProductsForForm(); // Refetch products to reflect new stock
         }
         fetchInvoices();
         setIsInvoiceModalOpen(false);
@@ -309,15 +365,19 @@ const PurchasingPage = () => {
   };
   const handleInvoiceItemChange = (index: number, field: keyof PurchaseItem, value: any) => {
     const updatedItems = [...currentInvoiceItems];
-    const item = updatedItems[index] as any;
+    const item = updatedItems[index] as any; // Using any for dynamic field assignment
     item[field] = value;
+
     if (field === 'product_id') {
         const product = availableProducts.find(p => p.id === value);
         item.productName = product?.name || '';
-        item.unit_price = product?.purchasePrice || 0;
+        item.unit_price = product?.purchasePrice || 0; 
     }
+    // Recalculate total_price if quantity or unit_price changes, or if product_id changes (which updates unit_price)
     if (field === 'quantity' || field === 'unit_price' || field === 'product_id') {
-      item.total_price = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0);
+      const quantity = Number(item.quantity) || 0;
+      const unit_price = Number(item.unit_price) || 0;
+      item.total_price = quantity * unit_price;
     }
     setCurrentInvoiceItems(updatedItems);
   };
@@ -482,42 +542,43 @@ const PurchasingPage = () => {
         <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); } }}>
           <DialogContent className="sm:max-w-2xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingInvoice ? `تعديل فاتورة الشراء: ${editingInvoice.invoice_number}` : 'إضافة فاتورة شراء جديدة'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), items: currentInvoiceItems });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: fd.get('inv-number') as string || editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0')});}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><Label htmlFor="inv-number">رقم الفاتورة (اتركه فارغًا للإنشاء التلقائي)</Label><Input id="inv-number" name="inv-number" defaultValue={editingInvoice?.invoice_number} className="mt-1 bg-input/50"/></div>
                     <div><Label htmlFor="inv-supplier">المورد</Label>
                         <Select name="inv-supplier" defaultValue={editingInvoice?.supplier_id} required dir="rtl">
                             <SelectTrigger className="mt-1 bg-input/50"><SelectValue placeholder={isLoadingSuppliers ? "جاري التحميل..." : "اختر المورد"} /></SelectTrigger>
                             <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
-                     <div><Label htmlFor="inv-status">حالة الدفع</Label>
+                </div>
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div><Label htmlFor="inv-date">تاريخ الفاتورة</Label><Input id="inv-date" name="inv-date" type="date" defaultValue={editingInvoice?.invoice_date || new Date().toISOString().split('T')[0]} required className="mt-1 bg-input/50"/></div>
+                    <div><Label htmlFor="inv-duedate">تاريخ الاستحقاق</Label><Input id="inv-duedate" name="inv-duedate" type="date" defaultValue={editingInvoice?.due_date || ''} className="mt-1 bg-input/50"/></div>
+                    <div><Label htmlFor="inv-status">حالة الدفع</Label>
                         <Select name="inv-status" defaultValue={editingInvoice?.status || 'غير مدفوعة'} required dir="rtl">
                             <SelectTrigger className="mt-1 bg-input/50"><SelectValue /></SelectTrigger>
                             <SelectContent>{['غير مدفوعة', 'مدفوعة جزئياً', 'مدفوعة بالكامل', 'متأخرة'].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4"> {/* Changed from md:grid-cols-3 to md:grid-cols-2 */}
-                    <div><Label htmlFor="inv-date">تاريخ الفاتورة</Label><Input id="inv-date" name="inv-date" type="date" defaultValue={editingInvoice?.invoice_date || new Date().toISOString().split('T')[0]} required className="mt-1 bg-input/50"/></div>
-                    <div><Label htmlFor="inv-duedate">تاريخ الاستحقاق</Label><Input id="inv-duedate" name="inv-duedate" type="date" defaultValue={editingInvoice?.due_date || ''} className="mt-1 bg-input/50"/></div>
-                </div>
                 <Separator />
                  <Label className="text-lg font-medium">بنود الفاتورة</Label>
                 {currentInvoiceItems.map((item, index) => (
                     <Card key={index} className="p-3 space-y-2 bg-muted/30">
-                         <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+                         <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end">
                             <div><Label>المنتج</Label>
-                                <Select value={item.product_id} onValueChange={(val) => handleInvoiceItemChange(index, 'product_id', val)} dir="rtl">
+                                <Select value={item.product_id} onValueChange={(val) => handleInvoiceItemChange(index, 'product_id', val)} dir="rtl" required>
                                 <SelectTrigger className="bg-input/50"><SelectValue placeholder={isLoadingProducts ? "جاري التحميل..." : "اختر منتجًا"}/></SelectTrigger>
-                                <SelectContent>{availableProducts.map(p=><SelectItem key={p.id} value={p.id}>{p.name} ({p.purchasePrice?.toFixed(2)} ل.س)</SelectItem>)}</SelectContent>
+                                <SelectContent>{availableProducts.map(p=><SelectItem key={p.id} value={p.id}>{p.name} (شراء: {p.purchasePrice?.toFixed(2)} ل.س)</SelectItem>)}</SelectContent>
                             </Select>
                             </div>
-                            <div><Label>الكمية</Label><Input type="number" value={item.quantity} onChange={e=>handleInvoiceItemChange(index, 'quantity', parseFloat(e.target.value))} className="bg-input/50" min="1"/></div>
-                            <div><Label>سعر الوحدة</Label><Input type="number" value={item.unit_price} onChange={e=>handleInvoiceItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01" readOnly/></div>
-                            <div className="flex items-center gap-2">
+                            <div><Label>الكمية</Label><Input type="number" value={item.quantity} onChange={e=>handleInvoiceItemChange(index, 'quantity', parseFloat(e.target.value))} className="bg-input/50" min="1" required/></div>
+                            <div><Label>سعر الوحدة</Label><Input type="number" value={item.unit_price} onChange={e=>handleInvoiceItemChange(index, 'unit_price', parseFloat(e.target.value))} className="bg-input/50" step="0.01" required/></div>
+                            <div className="flex items-center pt-5">
                                 <span className="text-sm w-full text-left p-2 bg-background rounded-md min-w-[80px]"> {item.total_price.toFixed(2)} ل.س</span>
-                                <Button type="button" variant="destructive" size="icon" onClick={() => removeInvoiceItem(index)} className="h-9 w-9"><Trash2Icon className="h-4 w-4"/></Button>
                             </div>
+                            <Button type="button" variant="destructive" size="icon" onClick={() => removeInvoiceItem(index)} className="h-9 w-9 self-end"><Trash2Icon className="h-4 w-4"/></Button>
                         </div>
                     </Card>
                 ))}
@@ -532,7 +593,7 @@ const PurchasingPage = () => {
                  <div className="text-right font-semibold text-lg">الإجمالي الكلي للفاتورة: <span className="font-headline text-primary">{invoiceGrandTotal.toFixed(2)} ل.س</span></div>
                  {editingInvoice && <p className="text-xs text-muted-foreground">ملاحظة: تحديث المخزون عند تعديل فاتورة شراء حالياً لا يعيد حساب الفروقات في كميات البنود. يتم تحديث المخزون بشكل أساسي عند إنشاء فاتورة جديدة. لضمان دقة المخزون عند التعديل، يتطلب الأمر منطقاً متقدماً (يفضل عبر وظائف خلفية أو trigger في قاعدة البيانات).</p>}
 
-              <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ الفاتورة</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
+              <DialogFooter><Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoadingProducts || isLoadingSuppliers || currentInvoiceItems.some(item => !item.product_id)}>حفظ الفاتورة</Button><DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
