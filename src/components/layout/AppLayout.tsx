@@ -37,7 +37,6 @@ const navItems: NavItem[] = [
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
   { href: '/purchasing', icon: Truck, label: 'المشتريات' },
   { href: '/clients', icon: Users, label: 'العملاء' },
-  // { href: '/users', icon: UsersRound, label: 'إدارة المستخدمين' }, // Removed from main nav
   { href: '/reports', icon: FileText, label: 'التقارير المالية' },
   { href: '/settings', icon: SettingsIcon, label: 'الإعدادات' },
 ];
@@ -160,4 +159,3 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 };
 
 export default AppLayout;
-
