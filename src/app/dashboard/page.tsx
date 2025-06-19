@@ -75,48 +75,48 @@ const DashboardPage = () => {
         {/* Key Statistics Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-primary">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">إجمالي الإيرادات</CardTitle>
-              <DollarSign className="h-4 w-4 text-primary" />
+              <DollarSign className="h-3.5 w-3.5 text-primary" />
             </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              <div className="text-2xl font-bold font-headline text-foreground">٤٥٬٢٣١٫٨٩ ل.س</div>
+            <CardContent className="px-3 pb-2 pt-0.5">
+              <div className="text-xl font-bold font-headline text-foreground">٤٥٬٢٣١٫٨٩ ل.س</div>
               <p className="text-xs text-green-500 pt-0.5 flex items-center">
-                <TrendingUp className="h-3 w-3 mr-1" /> ٢٠٫١٪+
+                <TrendingUp className="h-2.5 w-2.5 mr-1" /> ٢٠٫١٪+
               </p>
             </CardContent>
           </Card>
           <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-accent">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">العملاء النشطون</CardTitle>
-              <Users className="h-4 w-4 text-accent" />
+              <Users className="h-3.5 w-3.5 text-accent" />
             </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              <div className="text-2xl font-bold font-headline text-foreground">٢٬٣٥٠+</div>
+            <CardContent className="px-3 pb-2 pt-0.5">
+              <div className="text-xl font-bold font-headline text-foreground">٢٬٣٥٠+</div>
               <p className="text-xs text-green-500 pt-0.5 flex items-center">
-                <TrendingUp className="h-3 w-3 mr-1" /> ١٨٠٫١٪+
+                <TrendingUp className="h-2.5 w-2.5 mr-1" /> ١٨٠٫١٪+
               </p>
             </CardContent>
           </Card>
           <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-secondary">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">مبيعات اليوم</CardTitle>
-              <ShoppingBag className="h-4 w-4 text-secondary" />
+              <ShoppingBag className="h-3.5 w-3.5 text-secondary" />
             </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              <div className="text-2xl font-bold font-headline text-foreground">١٬٢٣٤+</div>
+            <CardContent className="px-3 pb-2 pt-0.5">
+              <div className="text-xl font-bold font-headline text-foreground">١٬٢٣٤+</div>
               <p className="text-xs text-green-500 pt-0.5 flex items-center">
-                <TrendingUp className="h-3 w-3 mr-1" /> ١٩٪+
+                <TrendingUp className="h-2.5 w-2.5 mr-1" /> ١٩٪+
               </p>
             </CardContent>
           </Card>
           <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 bg-destructive/5 border-l-4 border-destructive">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-destructive/90">مخزون منخفض</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
             </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              <div className="text-2xl font-bold font-headline text-destructive">١٢</div>
+            <CardContent className="px-3 pb-2 pt-0.5">
+              <div className="text-xl font-bold font-headline text-destructive">١٢</div>
               <p className="text-xs text-destructive/70 pt-0.5">منتجات تحتاج للمتابعة</p>
             </CardContent>
           </Card>
@@ -185,20 +185,20 @@ const DashboardPage = () => {
           </Card>
 
           <Card className="shadow-md">
-            <CardHeader className="pb-3 pt-4 px-4">
-              <CardTitle className="font-headline text-lg text-foreground flex items-center"><FileSpreadsheet className="ml-2 text-accent h-5 w-5"/>ملخصات سريعة</CardTitle>
+            <CardHeader className="pb-2 pt-3 px-3">
+              <CardTitle className="font-headline text-base text-foreground flex items-center"><FileSpreadsheet className="ml-2 text-accent h-4 w-4"/>ملخصات سريعة</CardTitle>
               <CardDescription className="text-xs">بيانات مالية ومخزنية هامة.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 px-4 pt-2 pb-3">
-              <div className="flex justify-between items-center p-2.5 bg-muted/30 rounded-md text-sm">
+            <CardContent className="space-y-2 px-3 pt-1.5 pb-2">
+              <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md text-xs">
                 <span className="text-muted-foreground">متوسط قيمة الطلب:</span>
-                <span className="font-semibold text-foreground">١٢٥.٥٠ ل.س</span>
+                <span className="font-semibold text-foreground">١٢٥٫٥٠ ل.س</span>
               </div>
-              <div className="flex justify-between items-center p-2.5 bg-muted/30 rounded-md text-sm">
+              <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md text-xs">
                 <span className="text-muted-foreground">إجمالي عدد المنتجات:</span>
                 <span className="font-semibold text-foreground">٣٥٠ منتج</span>
               </div>
-              <div className="flex justify-between items-center p-2.5 bg-muted/30 rounded-md text-sm">
+              <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md text-xs">
                 <span className="text-muted-foreground">معدل دوران المخزون:</span>
                 <span className="font-semibold text-foreground">٤.٢ مرة/شهر</span>
               </div>
