@@ -15,7 +15,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Wand2, Copy, Check, FileText, Download, Filter, BarChartHorizontalBig, PieChartIcon, CalendarIcon, Maximize, TrendingUp, Users, Package, LineChartIcon, PackageSearch, DollarSign, AlertTriangle, TableIcon } from 'lucide-react';
 import { explainFinancialReport, ExplainFinancialReportInput, ExplainFinancialReportOutput } from '@/ai/flows/financial-report-assistant';
 import { useToast } from '@/hooks/use-toast';
-import { format, parse, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { format, parse, startOfMonth, endOfMonth, subMonths, isValid } from "date-fns";
 import { arSA } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
@@ -49,14 +49,10 @@ const chartConfig = {
 } satisfies React.ComponentProps<typeof ChartContainer>["config"];
 
 interface SalesSummaryData { name: string; sales: number; } 
-// interface ProfitLossData { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; } // Kept for future reference
 interface InventoryStatusData { name: string; products: number; } 
-// interface CustomerActivityData { date: string; newCustomers: number; activeCustomers: number; totalOrders: number; } // Kept for future reference
 interface AverageOrderValueData { name: string; averageOrderValue: number; }
-// interface TopSellingProductData { name: string; totalSales: number; } // Will be derived from gross_profit_report_view
 interface LowStockProductsData { count: number; }
 
-// For Advanced Reports (assuming Supabase Views/Functions)
 interface GrossProfitReportItem { product_id: string; product_name: string; sale_date: string; total_quantity_sold: number; total_revenue: number; total_cost_of_goods_sold: number; gross_profit: number; }
 interface MonthlyPerformanceReportItem { period_label: string; total_sales: number; total_purchases: number; total_expenses: number; gross_profit: number; }
 interface DetailedStockReportItem { product_id: string; product_name: string; category: string; current_stock: number; min_stock_level: number; last_purchase_price: number | null; average_purchase_price: number | null; }
@@ -98,17 +94,42 @@ const FinancialReportsPage = () => {
     const fetchFilterData = async () => {
       if (!user) return;
       try {
-        const { data: categoriesData, error: catError } = await supabase.from('products').select('category').distinct();
-        if (catError) throw catError;
-        setFilterCategories(categoriesData.map((c:any) => ({ value: c.category, label: c.category })));
+        // Fetching distinct categories - MODIFIED
+        const { data: productsWithCategories, error: catError } = await supabase
+          .from('products')
+          .select('category');
+
+        if (catError) {
+          console.error("Error fetching categories for filter:", catError);
+          throw catError;
+        }
+
+        if (productsWithCategories) {
+          const distinctCategoryValues = Array.from(
+            new Set(productsWithCategories.map(p => p.category).filter(Boolean))
+          );
+          setFilterCategories(
+            distinctCategoryValues.map(category => ({ value: category, label: category }))
+          );
+        } else {
+          setFilterCategories([]);
+        }
 
         const { data: clientsData, error: cliError } = await supabase.from('clients').select('id, name');
         if (cliError) throw cliError;
-        setFilterClients(clientsData.map((c:any) => ({ value: c.id, label: c.name })));
+        if (clientsData) {
+            setFilterClients(clientsData.map((c: any) => ({ value: c.id, label: c.name })));
+        } else {
+            setFilterClients([]);
+        }
         
         const { data: suppliersData, error: supError } = await supabase.from('suppliers').select('id, name');
         if (supError) throw supError;
-        setFilterSuppliers(suppliersData.map((s:any) => ({ value: s.id, label: s.name })));
+        if (suppliersData) {
+            setFilterSuppliers(suppliersData.map((s: any) => ({ value: s.id, label: s.name })));
+        } else {
+            setFilterSuppliers([]);
+        }
 
       } catch (error: any) {
         toast({ title: "خطأ في جلب بيانات التصفية", description: "فشل جلب بيانات الفئات أو العملاء أو الموردين. " + error.message, variant: "destructive"});
@@ -119,7 +140,10 @@ const FinancialReportsPage = () => {
 
 
   const fetchReportData = useCallback(async () => {
-    if (!user || !dateRange?.from) return;
+    if (!user || !dateRange?.from || !isValid(dateRange.from)) {
+        toast({ title: "نطاق تاريخ غير صالح", description: "يرجى تحديد نطاق تاريخ صحيح.", variant: "destructive" });
+        return;
+    }
     setIsLoadingReportData(true);
     setGrossProfitReportData([]);
     setMonthlyPerformanceData([]);
@@ -129,16 +153,17 @@ const FinancialReportsPage = () => {
     setLowStockProductsData(null);
     setAverageOrderValueData([]);
     
-    const fromDateISO = dateRange.from.toISOString();
-    const toDateISO = dateRange.to ? new Date(dateRange.to.setHours(23, 59, 59, 999)).toISOString() : new Date().toISOString();
+    const fromDateISO = format(dateRange.from, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
+    const toDateISO = dateRange.to && isValid(dateRange.to) 
+        ? format(new Date(dateRange.to.setHours(23, 59, 59, 999)), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
+        : format(new Date(new Date().setHours(23, 59, 59, 999)), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
+
 
     try {
       if (reportType === "gross_profit_report") {
         let query = supabase.from('gross_profit_per_product_view').select('*')
             .gte('sale_date', fromDateISO)
             .lte('sale_date', toDateISO);
-        // Note: Category filter on this view would require the view to include product.category or join.
-        // For now, this view as defined previously does not directly support category filtering without modification.
         const { data, error } = await query;
         if (error) throw error;
         setGrossProfitReportData(data || []);
@@ -158,11 +183,11 @@ const FinancialReportsPage = () => {
         const { data, error } = await query;
         if (error) throw error;
         setDetailedStockReportData(data || []);
-         if (data?.length === 0) toast({ title: "لا توجد بيانات", description: "لم يتم العثور على بيانات لتقرير المخزون التفصيلي."});
+         if (data?.length === 0) toast({ title: "لا توجد بيانات", description: "لم يتم العثور على بيانات لتقرير المخزون التفصيلي بالمعايير المحددة."});
       } else if (reportType === "sales_summary_basic") { 
         let salesQuery = supabase.from('sales').select('sale_date, total_amount');
-        if (fromDateISO) salesQuery = salesQuery.gte('sale_date', fromDateISO);
-        if (toDateISO) salesQuery = salesQuery.lte('sale_date', toDateISO);
+        salesQuery = salesQuery.gte('sale_date', fromDateISO);
+        salesQuery = salesQuery.lte('sale_date', toDateISO);
         if (selectedClientFilter !== ALL_ITEMS_FILTER_VALUE) {
             salesQuery = salesQuery.eq('client_id', selectedClientFilter);
         }
@@ -182,6 +207,16 @@ const FinancialReportsPage = () => {
             .sort((a,b) => parse(a.name, "MMM yyyy", new Date(), {locale: arSA}).getTime() - parse(b.name, "MMM yyyy", new Date(), {locale: arSA}).getTime()); 
         setSalesSummaryData(formattedSalesData);
         if (formattedSalesData.length === 0) toast({ title: "لا توجد بيانات مبيعات", description: "لم يتم العثور على مبيعات للفترة والمعايير المحددة."});
+
+        // Calculate Average Order Value for this basic report
+        if (salesResult && salesResult.length > 0) {
+            const totalSalesAmount = salesResult.reduce((sum, sale) => sum + sale.total_amount, 0);
+            const numberOfOrders = salesResult.length;
+            setAverageOrderValueData([{ name: "متوسط قيمة الطلب", averageOrderValue: totalSalesAmount / numberOfOrders }]);
+        } else {
+            setAverageOrderValueData([]);
+        }
+
       } else if (reportType === "inventory_status_basic") { 
         let productsQuery = supabase.from('products').select('category, id');
         if (selectedCategoryFilter !== ALL_ITEMS_FILTER_VALUE) {
@@ -196,7 +231,9 @@ const FinancialReportsPage = () => {
             categoryData[cat] = (categoryData[cat] || 0) + 1; 
         });
         setInventoryStatusData(Object.entries(categoryData).map(([name, count]) => ({name, products: count})));
-        if (Object.keys(categoryData).length === 0) toast({ title: "لا توجد بيانات للمخزون", description: "لم يتم العثور على منتجات للمعايير المحددة."});
+        if (Object.keys(categoryData).length === 0 && productsResult?.length > 0) toast({ title: "تنبيه", description: "لا توجد فئات للمنتجات التي تطابق التصفية، أو أنها غير مصنفة."});
+        else if (productsResult?.length === 0) toast({ title: "لا توجد بيانات للمخزون", description: "لم يتم العثور على منتجات للمعايير المحددة."});
+
 
         const { data: lowStockResult, error: lowStockError, count: lowStockCount } = await supabase
             .from('products').select('id', { count: 'exact' }).lte('stock', supabase.sql`min_stock_level`);
@@ -213,7 +250,7 @@ const FinancialReportsPage = () => {
   }, [user, reportType, dateRange, toast, selectedCategoryFilter, selectedClientFilter]); 
 
   useEffect(() => {
-    if(user && dateRange?.from) fetchReportData();
+    if(user && dateRange?.from && isValid(dateRange.from)) fetchReportData();
   }, [fetchReportData, user, dateRange]);
 
 
@@ -254,7 +291,6 @@ const FinancialReportsPage = () => {
       let fileName = `${reportType}_report_${format(new Date(), "yyyyMMddHHmmss")}.csv`;
 
       if (reportType === "gross_profit_report" && grossProfitReportData.length > 0) {
-        dataToExport = grossProfitReportData;
         headers = ["اسم المنتج", "تاريخ البيع", "الكمية المباعة", "إجمالي الإيراد (ل.س)", "تكلفة البضاعة (ل.س)", "الربح الإجمالي (ل.س)"];
         dataToExport = grossProfitReportData.map(item => ({
           "اسم المنتج": item.product_name,
@@ -265,7 +301,6 @@ const FinancialReportsPage = () => {
           "الربح الإجمالي (ل.س)": item.gross_profit.toFixed(2),
         }));
       } else if (reportType === "monthly_performance_summary" && monthlyPerformanceData.length > 0) {
-        dataToExport = monthlyPerformanceData;
         headers = ["الفترة", "إجمالي المبيعات (ل.س)", "إجمالي المشتريات (ل.س)", "إجمالي المصروفات (ل.س)", "إجمالي الربح (ل.س)"];
          dataToExport = monthlyPerformanceData.map(item => ({
           "الفترة": item.period_label,
@@ -275,7 +310,6 @@ const FinancialReportsPage = () => {
           "إجمالي الربح (ل.س)": item.gross_profit.toFixed(2),
         }));
       } else if (reportType === "detailed_stock_report" && detailedStockReportData.length > 0) {
-        dataToExport = detailedStockReportData;
         headers = ["اسم المنتج", "الفئة", "المخزون الحالي", "الحد الأدنى", "آخر سعر شراء (ل.س)", "متوسط سعر شراء (ل.س)"];
          dataToExport = detailedStockReportData.map(item => ({
           "اسم المنتج": item.product_name,
@@ -286,14 +320,12 @@ const FinancialReportsPage = () => {
           "متوسط سعر شراء (ل.س)": item.average_purchase_price?.toFixed(2) ?? '-',
         }));
       } else if (reportType === "sales_summary_basic" && salesSummaryData.length > 0) {
-        dataToExport = salesSummaryData;
         headers = ["الشهر", "إجمالي المبيعات (ل.س)"];
          dataToExport = salesSummaryData.map(item => ({
           "الشهر": item.name,
           "إجمالي المبيعات (ل.س)": item.sales.toFixed(2),
         }));
       } else if (reportType === "inventory_status_basic" && inventoryStatusData.length > 0) {
-        dataToExport = inventoryStatusData; 
         headers = ["فئة المنتج", "عدد المنتجات"];
          dataToExport = inventoryStatusData.map(item => ({
           "فئة المنتج": item.name,
@@ -303,10 +335,10 @@ const FinancialReportsPage = () => {
 
 
       if (dataToExport.length > 0) {
-        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" // Added BOM for Excel UTF-8
+        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
             + headers.join(",") + "\n" 
             + dataToExport.map(row => headers.map(header => {
-                const val = (row as any)[header]; // Use header directly as key
+                const val = (row as any)[header]; 
                 return `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
             }).join(",")).join("\n");
         const encodedUri = encodeURI(csvContent);
@@ -415,16 +447,30 @@ const FinancialReportsPage = () => {
       
       case "sales_summary_basic":
         return salesSummaryData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={salesSummaryData} layout="vertical" barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
-              <XAxis type="number" axisLine={false} tickLine={false} tickFormatter={(value) => `${value.toLocaleString()} ل.س`}/>
-              <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toLocaleString()} ل.س`} />} cursor={{fill: 'hsl(var(--muted))'}}/>
-              <Legend content={<ChartLegendContent />}/>
-              <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="space-y-4">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={salesSummaryData} layout="vertical" barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
+                <XAxis type="number" axisLine={false} tickLine={false} tickFormatter={(value) => `${value.toLocaleString()} ل.س`}/>
+                <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toLocaleString()} ل.س`} />} cursor={{fill: 'hsl(var(--muted))'}}/>
+                <Legend content={<ChartLegendContent />}/>
+                <Bar dataKey="sales" fill="var(--color-sales)" radius={[0, 4, 4, 0]} name={chartConfig.sales.label} />
+              </BarChart>
+            </ResponsiveContainer>
+            {averageOrderValueData.length > 0 && (
+                <Card>
+                    <CardHeader className="pb-2 pt-3 px-3">
+                         <CardTitle className="font-headline text-md text-foreground flex items-center">
+                            <DollarSign className="ml-2 text-accent h-4 w-4"/> متوسط قيمة الطلب
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-2xl font-bold text-primary text-center py-3">
+                         {averageOrderValueData[0].averageOrderValue.toFixed(2)} ل.س
+                    </CardContent>
+                </Card>
+            )}
+          </div>
         ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لملخص المبيعات للفترة والمعايير المحددة.</p>;
       
       case "inventory_status_basic":
@@ -445,11 +491,11 @@ const FinancialReportsPage = () => {
                 ) : <p className="text-center text-muted-foreground p-4">لا توجد بيانات لعرضها لتوزيع المنتجات حسب الفئة.</p>}
                 {lowStockProductsData && (
                     <Card className="bg-destructive/10 border-destructive">
-                        <CardHeader className="flex-row items-center justify-between pb-2">
+                        <CardHeader className="flex-row items-center justify-between pb-2 pt-3 px-3">
                              <CardTitle className="text-lg font-headline text-destructive">منتجات منخفضة المخزون</CardTitle>
                              <AlertTriangle className="h-6 w-6 text-destructive" />
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="px-3 pt-1.5 pb-2">
                             <div className="text-3xl font-bold text-destructive text-center">
                                 {lowStockProductsData.count}
                             </div>
@@ -462,9 +508,9 @@ const FinancialReportsPage = () => {
       default:
         return (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
-                <FileText className="w-20 h-20 mb-4 text-muted-foreground/30"/>
+                <TableIcon className="w-20 h-20 mb-4 text-muted-foreground/30"/>
                 <p className="text-lg">اختر نوع تقرير لعرض البيانات.</p>
-                <p className="text-sm">إذا اخترت تقريراً متقدماً، تأكد من أنك قمت بإنشاء الـ Views أو Functions المطلوبة في Supabase كما هو موضح في التعليقات.</p>
+                <p className="text-sm">إذا اخترت تقريراً متقدماً، تأكد من أنك قمت بإنشاء الـ Views أو Functions المطلوبة في Supabase.</p>
             </div>
         );
     }
@@ -479,7 +525,7 @@ const FinancialReportsPage = () => {
             <FileText className="ml-3 h-8 w-8 text-primary" />
             التقارير المالية والتحليلات
           </h1>
-           <Button variant="outline" onClick={handleExportReport} disabled={isLoadingReportData}>
+           <Button variant="outline" onClick={handleExportReport} disabled={isLoadingReportData || (reportType === "gross_profit_report" && grossProfitReportData.length === 0) || (reportType === "monthly_performance_summary" && monthlyPerformanceData.length === 0) || (reportType === "detailed_stock_report" && detailedStockReportData.length === 0) || (reportType === "sales_summary_basic" && salesSummaryData.length === 0) || (reportType === "inventory_status_basic" && inventoryStatusData.length === 0 && !lowStockProductsData) }>
             <Download className="ml-2 h-4 w-4" /> تصدير التقرير الحالي
           </Button>
         </div>
@@ -539,6 +585,7 @@ const FinancialReportsPage = () => {
                     numberOfMonths={2}
                     dir="rtl"
                     locale={arSA}
+                    disabled={(date) => date > new Date() || date < new Date("2000-01-01")}
                   />
                 </PopoverContent>
               </Popover>
@@ -599,7 +646,7 @@ const FinancialReportsPage = () => {
             </ChartContainer>
           </CardContent>
           <CardFooter className="text-xs text-muted-foreground border-t pt-3">
-            البيانات المعروضة للفترة من {dateRange?.from ? format(dateRange.from, "PPP", {locale:arSA}) : "غير محدد"} إلى {dateRange?.to ? format(dateRange.to, "PPP", {locale:arSA}) : "غير محدد"}.
+            البيانات المعروضة للفترة من {dateRange?.from && isValid(dateRange.from) ? format(dateRange.from, "PPP", {locale:arSA}) : "غير محدد"} إلى {dateRange?.to && isValid(dateRange.to) ? format(dateRange.to, "PPP", {locale:arSA}) : (dateRange?.from && isValid(dateRange.from) ? format(new Date(), "PPP", {locale:arSA}) : "غير محدد")}.
             {selectedCategoryFilter !== ALL_ITEMS_FILTER_VALUE && ` الفئة: ${filterCategories.find(c=>c.value===selectedCategoryFilter)?.label || selectedCategoryFilter}.`}
             {selectedClientFilter !== ALL_ITEMS_FILTER_VALUE && ` العميل: ${filterClients.find(c=>c.value===selectedClientFilter)?.label || selectedClientFilter}.`}
           </CardFooter>
@@ -675,7 +722,92 @@ const FinancialReportsPage = () => {
 export default FinancialReportsPage;
     
 // SQL Views Reminder:
-// gross_profit_per_product_view
-// monthly_performance_summary_view
-// detailed_stock_report_view
+// CREATE OR REPLACE VIEW gross_profit_per_product_view AS ...
+// CREATE OR REPLACE VIEW monthly_performance_summary_view AS ...
+// CREATE OR REPLACE VIEW detailed_stock_report_view AS ...
 // Ensure these views are created in your Supabase project as previously discussed.
+
+/*
+Example SQL for gross_profit_per_product_view:
+CREATE OR REPLACE VIEW gross_profit_per_product_view AS
+SELECT
+    p.id AS product_id,
+    p.name AS product_name,
+    s.sale_date, 
+    SUM(si.quantity) AS total_quantity_sold,
+    SUM(si.total_price) AS total_revenue,
+    SUM(si.quantity * p.purchase_price) AS total_cost_of_goods_sold,
+    (SUM(si.total_price) - SUM(si.quantity * p.purchase_price)) AS gross_profit
+FROM
+    sale_items si
+JOIN
+    products p ON si.product_id = p.id
+JOIN
+    sales s ON si.sale_id = s.id
+GROUP BY
+    p.id, p.name, s.sale_date;
+
+Example SQL for monthly_performance_summary_view:
+CREATE OR REPLACE VIEW monthly_performance_summary_view AS
+WITH monthly_sales AS (
+    SELECT date_trunc('month', sale_date)::date AS report_period, SUM(total_amount) AS total_sales_amount
+    FROM sales GROUP BY 1
+),
+monthly_purchases AS (
+    SELECT date_trunc('month', invoice_date)::date AS report_period, SUM(grand_total) AS total_purchases_amount
+    FROM purchase_invoices GROUP BY 1
+),
+monthly_expenses AS (
+    SELECT date_trunc('month', expense_date)::date AS report_period, SUM(amount) AS total_expenses_amount
+    FROM expenses GROUP BY 1
+),
+monthly_gross_profit AS (
+    SELECT date_trunc('month', gppv.sale_date)::date AS report_period, SUM(gppv.gross_profit) AS total_gross_profit_amount
+    FROM gross_profit_per_product_view gppv -- Assumes the above view exists
+    GROUP BY 1
+)
+SELECT
+    to_char(periods.report_period, 'YYYY-MM') AS period_label,
+    COALESCE(ms.total_sales_amount, 0) AS total_sales,
+    COALESCE(mp.total_purchases_amount, 0) AS total_purchases,
+    COALESCE(me.total_expenses_amount, 0) AS total_expenses,
+    COALESCE(mgp.total_gross_profit_amount, 0) AS gross_profit
+FROM
+    (
+        SELECT DISTINCT report_period FROM monthly_sales
+        UNION SELECT DISTINCT report_period FROM monthly_purchases
+        UNION SELECT DISTINCT report_period FROM monthly_expenses
+        UNION SELECT DISTINCT report_period FROM monthly_gross_profit
+    ) AS periods
+LEFT JOIN monthly_sales ms ON periods.report_period = ms.report_period
+LEFT JOIN monthly_purchases mp ON periods.report_period = mp.report_period
+LEFT JOIN monthly_expenses me ON periods.report_period = me.report_period
+LEFT JOIN monthly_gross_profit mgp ON periods.report_period = mgp.report_period
+ORDER BY periods.report_period DESC;
+
+Example SQL for detailed_stock_report_view:
+CREATE OR REPLACE VIEW detailed_stock_report_view AS
+WITH avg_purchase_prices AS (
+    SELECT
+        pii.product_id,
+        CASE WHEN SUM(pii.quantity) = 0 THEN NULL ELSE SUM(pii.total_price) / SUM(pii.quantity) END as avg_unit_price
+    FROM purchase_invoice_items pii
+    WHERE pii.quantity > 0
+    GROUP BY pii.product_id
+)
+SELECT
+    p.id AS product_id,
+    p.name AS product_name,
+    p.category,
+    p.stock AS current_stock,
+    p.min_stock_level,
+    p.purchase_price AS last_purchase_price, 
+    app.avg_unit_price AS average_purchase_price 
+FROM
+    products p
+LEFT JOIN
+    avg_purchase_prices app ON p.id = app.product_id
+ORDER BY
+    p.name;
+*/
+
