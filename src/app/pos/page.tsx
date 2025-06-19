@@ -22,7 +22,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 
 interface Product extends BaseProduct {
-  pricePerUnit: number;
+  pricePerUnit: number; // This will be product.salePrice
 }
 
 interface CartItem extends Product {
@@ -52,16 +52,16 @@ const PosPage = () => {
     return {
       id: supabaseProduct.id,
       name: supabaseProduct.name,
-      description: supabaseProduct.description,
-      unit: supabaseProduct.unit,
-      productType: supabaseProduct.product_type,
-      barcodeNumber: supabaseProduct.barcode_number,
-      purchasePrice: supabaseProduct.purchase_price,
-      salePrice: supabaseProduct.sale_price,
-      pricePerUnit: supabaseProduct.sale_price, 
-      stock: supabaseProduct.stock,
-      minStockLevel: supabaseProduct.min_stock_level,
-      category: supabaseProduct.category,
+      description: supabaseProduct.description || '',
+      unit: supabaseProduct.unit as Product['unit'],
+      productType: supabaseProduct.product_type as Product['productType'],
+      barcodeNumber: supabaseProduct.barcode_number || '',
+      purchasePrice: supabaseProduct.purchase_price || 0,
+      salePrice: supabaseProduct.sale_price || 0,
+      pricePerUnit: supabaseProduct.sale_price || 0, 
+      stock: supabaseProduct.stock || 0,
+      minStockLevel: supabaseProduct.min_stock_level || 0,
+      category: supabaseProduct.category || 'غير محدد',
       image: supabaseProduct.image_url,
       dataAiHint: supabaseProduct.data_ai_hint,
     };
@@ -101,7 +101,7 @@ const PosPage = () => {
   };
 
   const weighableProductsForSelect = useMemo(() => 
-    availableProducts.filter(p => isProductWeighable(p)),
+    availableProducts.filter(p => isProductWeighable(p) && p.stock > 0), // Only show weighable products with stock
     [availableProducts]
   );
 
@@ -120,6 +120,10 @@ const PosPage = () => {
     }
 
     if (isProductWeighable(product)) {
+      if (product.stock <= 0) {
+         toast({ title: "نفذ المخزون", description: `عفواً، ${product.name} غير متوفر حالياً للوزن.`, variant: "destructive" });
+         return;
+      }
       setProductToWeigh(product);
       const existingCartItem = cart.find(item => item.id === product.id && item.isWeighed);
       setWeightInputValue(existingCartItem ? String(existingCartItem.itemQuantityInCart) : '');
@@ -141,7 +145,7 @@ const PosPage = () => {
           toast({ title: "تنبيه المخزون", description: `لا يوجد ما يكفي من ${product.name} في المخزون. المتوفر: ${product.stock}`, variant: "destructive" });
         }
       } else {
-        if (product.stock < 1) {
+        if (product.stock < 1) { // Check stock before adding new non-weighed item
            toast({ title: "نفذ المخزون", description: `${product.name} غير متوفر حالياً.`, variant: "destructive" });
            return;
         }
@@ -159,22 +163,34 @@ const PosPage = () => {
     if (productToWeigh && weightInputValue) {
       const weight = parseFloat(weightInputValue);
       if (!isNaN(weight) && weight > 0) {
-        setCalculatedPriceForWeight(productToWeigh.pricePerUnit * weight);
+        // For weighed items, stock check against available weight can be complex if unit is 'gram' and stock is in 'kg'.
+        // Assuming stock is in the same primary unit as pricePerUnit (e.g., kg).
+        if (weight > productToWeigh.stock) {
+            setCalculatedPriceForWeight(productToWeigh.pricePerUnit * productToWeigh.stock);
+            toast({title: "تنبيه المخزون", description: `الكمية المتوفرة من ${productToWeigh.name} هي ${productToWeigh.stock} ${productToWeigh.unit}. تم تعديل الوزن.`, variant: "destructive"})
+            setWeightInputValue(String(productToWeigh.stock)); // Adjust input to max available
+        } else {
+            setCalculatedPriceForWeight(productToWeigh.pricePerUnit * weight);
+        }
       } else {
         setCalculatedPriceForWeight(0);
       }
     } else {
       setCalculatedPriceForWeight(0);
     }
-  }, [productToWeigh, weightInputValue]);
+  }, [productToWeigh, weightInputValue, toast]);
 
   const handleAddOrUpdateWeighedProduct = () => {
     if (!productToWeigh || !weightInputValue) return;
-    const weight = parseFloat(weightInputValue);
+    let weight = parseFloat(weightInputValue);
 
     if (isNaN(weight) || weight <= 0) {
       toast({ title: "خطأ في الإدخال", description: "يرجى إدخال وزن صحيح للمنتج.", variant: "destructive" });
       return;
+    }
+    if (weight > productToWeigh.stock) {
+        toast({ title: "تنبيه المخزون", description: `الكمية المتوفرة من ${productToWeigh.name} هي ${productToWeigh.stock} ${productToWeigh.unit}. سيتم إضافة الكمية المتوفرة فقط.`, variant: "destructive"});
+        weight = productToWeigh.stock; // Cap weight at available stock
     }
     
     const existingItemIndex = cart.findIndex(item => item.id === productToWeigh.id && item.isWeighed);
@@ -186,7 +202,7 @@ const PosPage = () => {
         totalItemPrice: productToWeigh.pricePerUnit * weight,
       };
       setCart(updatedCart);
-      toast({ title: "تم تحديث المنتج", description: `تم تحديث وزن ${productToWeigh.name} إلى ${weight} ${productToWeigh.unit}.` });
+      toast({ title: "تم تحديث المنتج", description: `تم تحديث وزن ${productToWeigh.name} إلى ${weight.toFixed(3)} ${productToWeigh.unit}.` });
     } else {
       setCart([...cart, {
         ...productToWeigh,
@@ -194,7 +210,7 @@ const PosPage = () => {
         totalItemPrice: productToWeigh.pricePerUnit * weight,
         isWeighed: true,
       }]);
-      toast({ title: "تمت إضافة المنتج", description: `${productToWeigh.name} (${weight} ${productToWeigh.unit}) أضيف إلى السلة.` });
+      toast({ title: "تمت إضافة المنتج", description: `${productToWeigh.name} (${weight.toFixed(3)} ${productToWeigh.unit}) أضيف إلى السلة.` });
     }
     setIsWeightModalOpen(false);
     setProductToWeigh(null);
@@ -203,11 +219,19 @@ const PosPage = () => {
 
   const handleDirectAddWeighedProduct = () => {
     if (!selectedDirectWeighProduct || !directWeightInput) return;
-    const weight = parseFloat(directWeightInput);
+    let weight = parseFloat(directWeightInput);
   
     if (isNaN(weight) || weight <= 0) {
       toast({ title: "خطأ في الإدخال", description: "يرجى إدخال وزن صحيح للمنتج.", variant: "destructive" });
       return;
+    }
+    if (selectedDirectWeighProduct.stock <= 0) {
+         toast({ title: "نفذ المخزون", description: `عفواً، ${selectedDirectWeighProduct.name} غير متوفر حالياً للوزن.`, variant: "destructive" });
+         return;
+    }
+    if (weight > selectedDirectWeighProduct.stock) {
+        toast({ title: "تنبيه المخزون", description: `الكمية المتوفرة من ${selectedDirectWeighProduct.name} هي ${selectedDirectWeighProduct.stock} ${selectedDirectWeighProduct.unit}. سيتم إضافة الكمية المتوفرة فقط.`, variant: "destructive"});
+        weight = selectedDirectWeighProduct.stock; // Cap weight at available stock
     }
   
     const existingItemIndex = cart.findIndex(item => item.id === selectedDirectWeighProduct.id && item.isWeighed);
@@ -219,7 +243,7 @@ const PosPage = () => {
         totalItemPrice: selectedDirectWeighProduct.pricePerUnit * weight,
       };
       setCart(updatedCart);
-      toast({ title: "تم تحديث وزن المنتج", description: `تم تحديث وزن ${selectedDirectWeighProduct.name} في السلة إلى ${weight} ${selectedDirectWeighProduct.unit}.` });
+      toast({ title: "تم تحديث وزن المنتج", description: `تم تحديث وزن ${selectedDirectWeighProduct.name} في السلة إلى ${weight.toFixed(3)} ${selectedDirectWeighProduct.unit}.` });
     } else {
       setCart([...cart, {
         ...selectedDirectWeighProduct,
@@ -227,7 +251,7 @@ const PosPage = () => {
         totalItemPrice: selectedDirectWeighProduct.pricePerUnit * weight,
         isWeighed: true,
       }]);
-      toast({ title: "تمت إضافة المنتج", description: `${selectedDirectWeighProduct.name} (${weight} ${selectedDirectWeighProduct.unit}) أضيف إلى السلة.` });
+      toast({ title: "تمت إضافة المنتج", description: `${selectedDirectWeighProduct.name} (${weight.toFixed(3)} ${selectedDirectWeighProduct.unit}) أضيف إلى السلة.` });
     }
   
     setSelectedDirectWeighProduct(null);
@@ -275,14 +299,18 @@ const PosPage = () => {
         return;
     }
 
+    setIsLoadingProducts(true); // Indicate loading during checkout
+
     try {
+      // 1. Insert into 'sales' table
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
           total_amount: cartTotal,
-          payment_method: 'Cash', 
+          payment_method: 'Cash', // Hardcoded for now
           sale_date: new Date().toISOString(),
           user_id: user.id,
+          // client_id: null, // Add client_id if client selection is implemented
         })
         .select()
         .single();
@@ -292,10 +320,11 @@ const PosPage = () => {
 
       const saleId = saleData.id;
 
+      // 2. Insert into 'sale_items' table
       const saleItemsToInsert = cart.map(item => ({
         sale_id: saleId,
         product_id: item.id,
-        quantity: item.itemQuantityInCart,
+        quantity: item.itemQuantityInCart, // This is the weight for weighed items
         unit_price: item.pricePerUnit,
         total_price: item.totalItemPrice,
       }));
@@ -303,48 +332,61 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
 
-      const stockUpdatePromises = cart.map(async (item) => {
-        const currentProduct = await supabase.from('products').select('stock').eq('id', item.id).single();
-        if (currentProduct.error || !currentProduct.data) {
-            toast({ title: "خطأ في المخزون", description: `فشل في جلب المخزون الحالي لـ ${item.name}. البيع لم يكتمل لبعض المنتجات.`, variant: "destructive" });
-            throw new Error(`فشل في جلب المخزون الحالي لـ ${item.name}.`);
+      // 3. Update stock for each product
+      for (const item of cart) {
+        const { data: currentProductData, error: fetchError } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', item.id)
+          .single();
+
+        if (fetchError || !currentProductData) {
+          console.error(`Error fetching stock for product ${item.name}:`, fetchError);
+          toast({ title: "خطأ جزئي في تحديث المخزون", description: `فشل في جلب المخزون الحالي لـ ${item.name}. البيع سُجل ولكن قد يكون المخزون غير دقيق.`, variant: "destructive" });
+          continue; // Skip stock update for this item if fetch fails
         }
         
-        let quantityToDeduct = item.itemQuantityInCart;
-        const newStock = currentProduct.data.stock - quantityToDeduct;
+        const quantityToDeduct = item.itemQuantityInCart;
+        const newStock = currentProductData.stock - quantityToDeduct;
 
         if (newStock < 0) {
-            toast({ title: "خطأ في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع. تم بيع ${currentProduct.data.stock} فقط.`, variant: "destructive" });
-            // Adjust quantity in sale_items for this item if possible (complex, requires update after insert)
-            // For now, we proceed but the stock update will fail or set to 0 based on DB constraints.
-            // A better approach is pre-sale stock check and reservation.
-            const { error: stockUpdateError } = await supabase
+            // This case should ideally be prevented by checks before/during adding to cart
+            toast({ title: "خطأ حرج في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع. تم بيع ${currentProductData.stock} فقط. يرجى مراجعة المخزون.`, variant: "destructive" });
+            // Set stock to 0 if it would go negative.
+            const { error: stockUpdateErrorNegative } = await supabase
                 .from('products')
-                .update({ stock: 0 }) // Set to 0 if goes negative
+                .update({ stock: 0 }) 
                 .eq('id', item.id);
-            if (stockUpdateError) throw stockUpdateError;
+            if (stockUpdateErrorNegative) {
+                console.error(`Error setting stock to 0 for ${item.name}:`, stockUpdateErrorNegative);
+                toast({ title: "خطأ في تحديث مخزون", description: `فشل تحديث مخزون ${item.name} إلى 0.`, variant: "destructive" });
+            }
         } else {
             const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: newStock })
                 .eq('id', item.id);
-            if (stockUpdateError) throw stockUpdateError;
+            if (stockUpdateError) {
+                console.error(`Error updating stock for ${item.name}:`, stockUpdateError);
+                toast({ title: "خطأ في تحديث مخزون", description: `فشل تحديث مخزون ${item.name}.`, variant: "destructive" });
+            }
         }
-      });
-
-      await Promise.all(stockUpdatePromises);
+      }
       
       toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تحديث المخزون وتسجيل البيع.` });
       setCart([]); 
       setSelectedDirectWeighProduct(null);
       setDirectWeightInput('');
-      fetchProducts(); 
+      await fetchProducts(); // Refetch products to update stock display
     } catch (error: any) {
+      console.error("Checkout error:", error);
       toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع أو تحديث المخزون.", variant: "destructive"});
+    } finally {
+        setIsLoadingProducts(false);
     }
   };
 
-  if (isLoadingProducts && !user) { 
+  if (isLoadingProducts && !user && cart.length === 0) { // Show loader only on initial load without user
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -400,6 +442,7 @@ const PosPage = () => {
                       onValueChange={(productId) => {
                         const product = availableProducts.find(p => p.id === productId);
                         setSelectedDirectWeighProduct(product || null);
+                        setDirectWeightInput(''); // Clear weight input on product change
                       }}
                       dir="rtl"
                     >
@@ -408,7 +451,7 @@ const PosPage = () => {
                       </SelectTrigger>
                       <SelectContent>
                         {weighableProductsForSelect.length > 0 ? weighableProductsForSelect.map(p => (
-                          <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ل.س/{p.unit})</SelectItem>
+                          <SelectItem key={p.id} value={p.id}>{p.name} ({p.pricePerUnit.toFixed(2)} ل.س/{p.unit}) (المخزون: {p.stock} {p.unit})</SelectItem>
                         )) : <SelectItem value="no-weighable-products" disabled>لا توجد منتجات موزونة متاحة</SelectItem>}
                       </SelectContent>
                     </Select>
@@ -423,13 +466,15 @@ const PosPage = () => {
                       placeholder="مثال: 0.250"
                       className="mt-1 bg-input/50 focus:bg-input"
                       step="0.001"
-                      disabled={!selectedDirectWeighProduct}
+                      min="0.001"
+                      disabled={!selectedDirectWeighProduct || selectedDirectWeighProduct.stock <= 0}
                     />
                      <p className="text-xs text-muted-foreground mt-1">ادخل الوزن بـ {selectedDirectWeighProduct?.unit || 'الوحدة المختارة'}. مثال: 0.2 لـ 200 غرام (إذا كانت الوحدة كيلو).</p>
+                     {selectedDirectWeighProduct && selectedDirectWeighProduct.stock <=0 && <p className="text-xs text-destructive mt-1">هذا المنتج نفذ من المخزون.</p>}
                   </div>
                   <Button
                     onClick={handleDirectAddWeighedProduct}
-                    disabled={!selectedDirectWeighProduct || !directWeightInput || parseFloat(directWeightInput) <= 0}
+                    disabled={!selectedDirectWeighProduct || !directWeightInput || parseFloat(directWeightInput) <= 0 || selectedDirectWeighProduct.stock <=0 || isLoadingProducts}
                     className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                   >
                     <Plus className="ml-2 h-4 w-4" /> إضافة المنتج الموزون للسلة
@@ -445,7 +490,7 @@ const PosPage = () => {
             </CardHeader>
             <CardContent className="flex-1 p-3 overflow-hidden">
               <ScrollArea className="h-full pr-3">
-                {isLoadingProducts ? (
+                {isLoadingProducts && availableProducts.length === 0 ? ( // Show loader only if products are truly loading for the first time
                     <div className="flex justify-center items-center h-full">
                         <PackageSearch className="h-16 w-16 text-muted-foreground/30 animate-pulse" />
                     </div>
@@ -457,19 +502,25 @@ const PosPage = () => {
                         variant="outline" 
                         className="h-auto p-2 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[90px] relative"
                         onClick={() => handleProductSelection(product)}
-                        disabled={product.stock === 0 && !isProductWeighable(product)}
+                        disabled={product.stock <= 0 && !isProductWeighable(product)}
                       >
-                        {product.stock === 0 && !isProductWeighable(product) && (
+                        {product.stock <= 0 && !isProductWeighable(product) && (
+                            <Badge variant="destructive" className="absolute top-1 right-1 text-xs px-1 py-0.5">نفذ</Badge>
+                        )}
+                         {isProductWeighable(product) && product.stock <= 0 && (
                             <Badge variant="destructive" className="absolute top-1 right-1 text-xs px-1 py-0.5">نفذ</Badge>
                         )}
                         <Image src={product.image || `https://placehold.co/40x40.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={30} height={30} className="mb-1 rounded" data-ai-hint={product.dataAiHint || "item product"} />
                         <span className="text-xs leading-tight">{product.name}</span>
                         <span className="text-xs font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ل.س/{product.unit}</span>
+                        <span className="text-xs text-muted-foreground">(المخزون: {product.stock})</span>
                       </Button>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-sm text-center py-4">لا توجد منتجات تطابق البحث أو كلها في السلة.</p>
+                  <p className="text-muted-foreground text-sm text-center py-4">
+                    {availableProducts.length === 0 && !isLoadingProducts ? "لا توجد منتجات متاحة حالياً." : "لا توجد منتجات تطابق البحث أو كلها في السلة." }
+                  </p>
                 )}
               </ScrollArea>
             </CardContent>
@@ -523,7 +574,12 @@ const PosPage = () => {
                               </Button>
                               <Input type="number" value={item.itemQuantityInCart} 
                                 onChange={(e) => updateCartItemQuantity(item.id, e.target.value)} 
-                                onBlur={(e) => updateCartItemQuantity(item.id, parseInt(e.target.value) || 1)}
+                                onBlur={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (isNaN(val) || val < 1) updateCartItemQuantity(item.id, 1);
+                                    else if (val > item.stock) updateCartItemQuantity(item.id, item.stock);
+                                    else updateCartItemQuantity(item.id, val);
+                                }}
                                 className="w-12 h-8 text-center text-sm p-1 bg-input/30 focus:bg-input"
                                 min="1"
                                 max={item.stock}
@@ -567,7 +623,12 @@ const PosPage = () => {
             <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="text-sm py-3"><Landmark className="ml-2 h-4 w-4"/> دفع آجل</Button>
                 <Button className="w-full text-lg py-3 bg-primary hover:bg-primary/90 text-primary-foreground col-span-2 sm:col-span-1" onClick={handleCheckout} disabled={cart.length === 0 || isLoadingProducts}>
-                  <CreditCard className="ml-2 h-5 w-5" /> الدفع الآن
+                  {isLoadingProducts && cart.length > 0 ? (
+                     <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2"></div>
+                  ) : (
+                    <CreditCard className="ml-2 h-5 w-5" />
+                  )}
+                  {isLoadingProducts && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن'}
                 </Button>
             </div>
              <p className="text-xs text-muted-foreground text-center">طرق دفع أخرى (بطاقة، تحويل) يمكن تفعيلها من الإعدادات.</p>
@@ -593,6 +654,7 @@ const PosPage = () => {
                         <div>
                             <p className="font-medium text-lg">{productToWeigh.name}</p>
                             <p className="text-sm text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ل.س / {productToWeigh.unit}</p>
+                            <p className="text-xs text-muted-foreground">المخزون المتوفر: {productToWeigh.stock} {productToWeigh.unit}</p>
                         </div>
                     </div>
                     <div>
@@ -605,18 +667,22 @@ const PosPage = () => {
                             placeholder={`مثال: 0.250 لـ ربع ${productToWeigh.unit}`}
                             className="mt-1 bg-input/50 focus:bg-input text-lg"
                             step="0.001"
+                            min="0.001"
+                            max={productToWeigh.stock} // Set max to available stock
                         />
                     </div>
-                    {parseFloat(weightInputValue) > 0 && (
+                    {parseFloat(weightInputValue) > 0 && productToWeigh && (
                          <div className="p-3 bg-primary/10 rounded-md text-center">
                             <p className="text-sm text-muted-foreground">السعر المحسوب</p>
-                            <p className="text-2xl font-semibold text-primary">{calculatedPriceForWeight.toFixed(2)} ل.س</p>
+                            <p className="text-2xl font-semibold text-primary">
+                                { (productToWeigh.pricePerUnit * Math.min(parseFloat(weightInputValue), productToWeigh.stock)).toFixed(2) } ل.س
+                            </p>
                         </div>
                     )}
                 </div>
             )}
             <DialogFooter>
-                <Button onClick={handleAddOrUpdateWeighedProduct} className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={!productToWeigh || !weightInputValue || parseFloat(weightInputValue) <= 0}>
+                <Button onClick={handleAddOrUpdateWeighedProduct} className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={!productToWeigh || !weightInputValue || parseFloat(weightInputValue) <= 0 || isLoadingProducts}>
                     {cart.find(item => item.id === productToWeigh?.id && item.isWeighed) ? 'تحديث الوزن في السلة' : 'إضافة إلى السلة'}
                 </Button>
                 <DialogClose asChild>
