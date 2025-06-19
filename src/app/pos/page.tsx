@@ -12,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Landmark, Edit3, PackageSearch, TicketX, MinusCircle } from 'lucide-react';
+import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Landmark, Edit3, PackageSearch, MinusCircle } from 'lucide-react';
 import type { Product as BaseProduct } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
@@ -115,7 +115,7 @@ const PosPage = () => {
     availableProducts.filter(p => 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
       (!isProductWeighable(p) || !cart.find(item => item.id === p.id && item.isWeighed)) &&
-      p.stock > 0 // Only show products with stock for quick add
+      p.stock > 0 
     ),
     [searchTerm, cart, availableProducts] 
   );
@@ -129,7 +129,6 @@ const PosPage = () => {
          toast({ title: "تنبيه المخزون", description: `الكمية المتوفرة من ${product.name} هي ${product.stock} ${product.unit}. سيتم إضافة الكمية المتوفرة فقط.`, variant: "destructive"});
          quantity = product.stock;
     }
-
 
     const existingItemIndex = cart.findIndex(item => item.id === product.id && item.isWeighed === isWeighedItem);
     
@@ -154,6 +153,8 @@ const PosPage = () => {
       }
       setCart(updatedCart);
        if (isWeighedItem) toast({ title: "تم تحديث وزن المنتج", description: `تم تحديث وزن ${product.name} في السلة إلى ${quantity.toFixed(3)} ${product.unit}.` });
+       else toast({ title: "تم تحديث كمية المنتج", description: `تم تحديث كمية ${product.name} في السلة إلى ${newQuantity}.` });
+
 
     } else {
       if (!isWeighedItem && product.stock < quantity) {
@@ -220,6 +221,7 @@ const PosPage = () => {
     setSelectedDirectWeighProduct(null);
     setDirectWeightInput('');
     toast({ title: "تمت إضافة المنتج الموزون", description: `${selectedDirectWeighProduct.name} (${weight.toFixed(3)} ${selectedDirectWeighProduct.unit}) أضيف إلى السلة.` });
+    barcodeInputRef.current?.focus();
 
   }, [selectedDirectWeighProduct, directWeightInput, toast, addProductToCart]);
   
@@ -270,11 +272,11 @@ const PosPage = () => {
         if (product.stock <= 0) {
            toast({ title: "نفذ المخزون", description: `منتج الباركود ${product.name} غير متوفر للوزن.`, variant: "destructive" });
         } else {
-            setProductToWeigh(product);
+            setProductToWeigh(product); // Open weight modal for weighable items
             setIsWeightModalOpen(true);
         }
       } else {
-        addProductToCart(product, 1, false);
+        addProductToCart(product, 1, false); // Add non-weighable item directly
       }
     } else {
       toast({ title: "لم يتم العثور على المنتج", description: `لم يتم العثور على منتج برمز الباركود: ${barcode}`, variant: "destructive" });
@@ -285,16 +287,29 @@ const PosPage = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Enter' && searchTerm.trim() && document.activeElement === barcodeInputRef.current) {
-        event.preventDefault();
-        handleBarcodeScan(searchTerm);
+      // Check if the active element is the barcode input or an input within a dialog (like weight modal)
+      const activeEl = document.activeElement as HTMLElement;
+      const isBarcodeActive = activeEl === barcodeInputRef.current;
+      const isDialogInputActive = activeEl.tagName === 'INPUT' && activeEl.closest('[role="dialog"]') !== null;
+
+      if (event.key === 'Enter') {
+        if (isBarcodeActive && searchTerm.trim()) {
+          event.preventDefault();
+          handleBarcodeScan(searchTerm);
+        } else if (isDialogInputActive && productToWeigh && isWeightModalOpen && weightInputValue.trim()) {
+            event.preventDefault();
+            handleAddOrUpdateWeighedProduct();
+        } else if (isDialogInputActive && selectedDirectWeighProduct && directWeightInputRef.current === activeEl && directWeightInput.trim()){
+            event.preventDefault();
+            handleDirectAddWeighedProduct();
+        }
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [searchTerm, handleBarcodeScan]);
+  }, [searchTerm, handleBarcodeScan, productToWeigh, isWeightModalOpen, weightInputValue, handleAddOrUpdateWeighedProduct, selectedDirectWeighProduct, directWeightInput, handleDirectAddWeighedProduct]);
 
 
   const handleCheckout = async () => {
@@ -310,12 +325,12 @@ const PosPage = () => {
     setIsLoadingProducts(true); 
 
     try {
-      // TODO: Add a column 'discount_amount' (NUMERIC) to your 'sales' table in Supabase.
+      // TODO: CRITICAL - Ensure you have a `discount_amount` (NUMERIC) column in your `sales` table in Supabase if you want to store the discount.
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
-          total_amount: cartTotal, // This is the final amount after discount
-          // discount_amount: discountAmount, // Uncomment this after adding the column
+          total_amount: cartTotal, 
+          // discount_amount: discountAmount, // Uncomment and use if you add the column
           payment_method: 'Cash', 
           sale_date: new Date().toISOString(),
           user_id: user.id,
@@ -339,6 +354,7 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
 
+      // CRITICAL: Update stock for each product sold
       for (const item of cart) {
         const { data: currentProductData, error: fetchError } = await supabase
           .from('products')
@@ -347,30 +363,35 @@ const PosPage = () => {
           .single();
 
         if (fetchError || !currentProductData) {
-          console.error(`Error fetching stock for product ${item.name}:`, fetchError);
+          console.error(`خطأ في جلب مخزون المنتج ${item.name}:`, fetchError);
+          // Log error but continue processing other items if possible
           toast({ title: "خطأ جزئي في تحديث المخزون", description: `فشل في جلب المخزون الحالي لـ ${item.name}. البيع سُجل ولكن قد يكون المخزون غير دقيق.`, variant: "destructive" });
-          continue;
+          continue; 
         }
         
         const quantityToDeduct = item.itemQuantityInCart;
         const newStock = currentProductData.stock - quantityToDeduct;
 
         if (newStock < 0) {
+            // This case should ideally be prevented by checks before adding to cart,
+            // but as a fallback, set stock to 0 and log/notify.
             toast({ title: "خطأ حرج في المخزون", description: `نفذ مخزون ${item.name} أثناء محاولة إتمام البيع. تم بيع ${currentProductData.stock} فقط. يرجى مراجعة المخزون.`, variant: "destructive" });
             const { error: stockUpdateErrorNegative } = await supabase
                 .from('products')
                 .update({ stock: 0 }) 
                 .eq('id', item.id);
             if (stockUpdateErrorNegative) {
-                console.error(`Error setting stock to 0 for ${item.name}:`, stockUpdateErrorNegative);
+                console.error(`خطأ في تعيين مخزون ${item.name} إلى صفر:`, stockUpdateErrorNegative);
             }
         } else {
             const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: newStock })
                 .eq('id', item.id);
+
             if (stockUpdateError) {
-                console.error(`Error updating stock for ${item.name}:`, stockUpdateError);
+                console.error(`خطأ في تحديث مخزون ${item.name}:`, stockUpdateError);
+                toast({ title: "خطأ في تحديث مخزون منتج", description: `فشل تحديث مخزون ${item.name}: ${stockUpdateError.message}`, variant: "destructive"});
             }
         }
       }
@@ -382,9 +403,10 @@ const PosPage = () => {
       setDiscountAmount(0);
       setDiscountInput('');
       await fetchProducts(); 
-      barcodeInputRef.current?.focus(); // Refocus barcode input
+      barcodeInputRef.current?.focus();
+      // TODO: Implement receipt printing functionality here
     } catch (error: any) {
-      console.error("Checkout error:", error);
+      console.error("خطأ أثناء الدفع:", error);
       toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع أو تحديث المخزون.", variant: "destructive"});
     } finally {
         setIsLoadingProducts(false);
@@ -396,11 +418,12 @@ const PosPage = () => {
     if (isNaN(amount) || amount < 0) {
       toast({ title: "مبلغ خصم غير صالح", description: "يرجى إدخال مبلغ خصم صحيح.", variant: "destructive" });
       setDiscountAmount(0);
+      setDiscountInput('');
       return;
     }
     if (amount > subTotal) {
       toast({ title: "مبلغ الخصم كبير جداً", description: "مبلغ الخصم لا يمكن أن يتجاوز المجموع الفرعي.", variant: "destructive" });
-      setDiscountAmount(subTotal); // Cap discount at subTotal
+      setDiscountAmount(subTotal); 
       setDiscountInput(subTotal.toString());
       return;
     }
@@ -434,6 +457,7 @@ const PosPage = () => {
   return (
     <AppLayout>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)] max-h-[calc(100vh-7rem)]">
+        {/* Left Panel: Product Search & Quick Add */}
         <div className="lg:w-2/5 flex flex-col gap-3">
           <Card className="shadow-lg">
             <CardHeader className="pb-3 pt-4 px-4">
@@ -450,7 +474,7 @@ const PosPage = () => {
                     placeholder="امسح الباركود أو ابحث بالاسم..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pr-10 bg-input/50 focus:bg-input text-sm"
+                    className="pr-10 bg-input/50 focus:bg-input text-sm h-9"
                   />
                 </div>
                 <Button variant="outline" size="icon" className="shrink-0 h-9 w-9" onClick={() => barcodeInputRef.current?.focus()}>
@@ -527,20 +551,17 @@ const PosPage = () => {
                       <Button 
                         key={product.id} 
                         variant="outline" 
-                        className="h-auto p-1.5 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[75px] relative text-xs leading-tight"
+                        className="h-auto p-1.5 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[70px] relative text-xs leading-tight"
                         onClick={() => handleProductSelection(product)}
-                        disabled={product.stock <= 0 && !isProductWeighable(product)}
+                        disabled={(product.stock <= 0 && !isProductWeighable(product)) || (isProductWeighable(product) && product.stock <= 0)}
                       >
-                        {product.stock <= 0 && !isProductWeighable(product) && (
+                        {(product.stock <= 0 && !isProductWeighable(product)) || (isProductWeighable(product) && product.stock <= 0) && (
                             <Badge variant="destructive" className="absolute top-0.5 right-0.5 text-[0.6rem] px-1 py-0 leading-none">نفذ</Badge>
                         )}
-                         {isProductWeighable(product) && product.stock <= 0 && (
-                            <Badge variant="destructive" className="absolute top-0.5 right-0.5 text-[0.6rem] px-1 py-0 leading-none">نفذ</Badge>
-                        )}
-                        <Image src={product.image || `https://placehold.co/30x30.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={24} height={24} className="mb-0.5 rounded" data-ai-hint={product.dataAiHint || "item product"} />
-                        <span className="text-[0.7rem]">{product.name}</span>
-                        <span className="text-[0.7rem] font-semibold text-primary">{product.pricePerUnit.toFixed(2)} ل.س/{product.unit}</span>
-                        <span className="text-[0.65rem] text-muted-foreground">(مخزون: {product.stock})</span>
+                        <Image src={product.image || `https://placehold.co/24x24.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={24} height={24} className="mb-0.5 rounded" data-ai-hint={product.dataAiHint || "item product"} />
+                        <span className="text-[0.7rem] leading-tight block">{product.name}</span>
+                        <span className="text-[0.7rem] font-semibold text-primary block">{product.pricePerUnit.toFixed(2)} ل.س/{product.unit}</span>
+                        <span className="text-[0.65rem] text-muted-foreground block">(مخزون: {product.stock})</span>
                       </Button>
                     ))}
                   </div>
@@ -554,6 +575,7 @@ const PosPage = () => {
           </Card>
         </div>
 
+        {/* Right Panel: Current Sale */}
         <Card className="lg:w-3/5 shadow-lg flex flex-col h-full">
           <CardHeader className="flex-shrink-0 pb-3 pt-4 px-4">
             <CardTitle className="font-headline text-xl text-foreground">البيع الحالي</CardTitle>
@@ -577,51 +599,56 @@ const PosPage = () => {
                 <TableBody>
                     {cart.map(item => (
                       <TableRow key={`${item.id}-${item.isWeighed}`}>
-                        <TableCell className="py-2 px-3">
-                          <div className="flex items-center">
-                            <Image src={item.image || `https://placehold.co/28x28.png?text=${encodeURIComponent(item.name.charAt(0))}`} alt={item.name} width={28} height={28} className="ml-2 rounded object-cover" data-ai-hint={item.dataAiHint || "item product"}/>
-                            <div>
-                              <p className="font-medium text-foreground text-sm leading-tight">{item.name}</p>
+                        <TableCell className="py-2 px-3 align-top">
+                          <div className="flex items-start">
+                            <Image src={item.image || `https://placehold.co/28x28.png?text=${encodeURIComponent(item.name.charAt(0))}`} alt={item.name} width={28} height={28} className="ml-2 rounded object-cover mt-1" data-ai-hint={item.dataAiHint || "item product"}/>
+                            <div className="flex-grow">
+                              <p className="font-medium text-foreground text-sm leading-tight break-words">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{item.pricePerUnit.toFixed(2)} ل.س/{item.unit}</p>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center py-2 px-3">
+                        <TableCell className="text-center py-2 px-3 align-top">
                           {item.isWeighed ? (
-                            <div className="flex items-center justify-center gap-1">
-                                <span className="font-medium text-sm">{item.itemQuantityInCart.toFixed(3)} {item.unit}</span>
-                                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleProductSelection(item)}>
-                                    <Edit3 className="h-3 w-3 text-primary" />
-                                </Button>
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                <div className="flex items-center gap-1">
+                                    <span className="font-medium text-sm">{item.itemQuantityInCart.toFixed(3)} {item.unit}</span>
+                                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleProductSelection(item)}>
+                                        <Edit3 className="h-3 w-3 text-primary" />
+                                    </Button>
+                                </div>
+                                <span className="text-[0.7rem] text-muted-foreground block">(مخزون: {item.stock} {item.unit})</span>
                             </div>
                           ) : (
-                            <div className="flex items-center justify-center gap-0.5">
-                              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart - 1)}>
-                                <Minus className="h-2.5 w-2.5" />
-                              </Button>
-                              <Input type="number" value={item.itemQuantityInCart} 
-                                onChange={(e) => updateCartItemQuantity(item.id, e.target.value)} 
-                                onBlur={(e) => {
-                                    const val = parseInt(e.target.value);
-                                    if (isNaN(val) || val < 1) updateCartItemQuantity(item.id, 1);
-                                    else if (val > item.stock) updateCartItemQuantity(item.id, item.stock);
-                                    else updateCartItemQuantity(item.id, val);
-                                }}
-                                className="w-10 h-7 text-center text-xs p-0.5 bg-input/30 focus:bg-input"
-                                min="1"
-                                max={item.stock}
-                              />
-                              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart + 1)}>
-                                <Plus className="h-2.5 w-2.5" />
-                              </Button>
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                <div className="flex items-center justify-center gap-0.5">
+                                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart - 1)}>
+                                    <Minus className="h-2.5 w-2.5" />
+                                </Button>
+                                <Input type="number" value={item.itemQuantityInCart} 
+                                    onChange={(e) => updateCartItemQuantity(item.id, e.target.value)} 
+                                    onBlur={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (isNaN(val) || val < 1) updateCartItemQuantity(item.id, 1);
+                                        else if (val > item.stock) updateCartItemQuantity(item.id, item.stock);
+                                        else updateCartItemQuantity(item.id, val);
+                                    }}
+                                    className="w-10 h-7 text-center text-xs p-0.5 bg-input/30 focus:bg-input"
+                                    min="1"
+                                    max={item.stock}
+                                />
+                                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart + 1)}>
+                                    <Plus className="h-2.5 w-2.5" />
+                                </Button>
+                                </div>
+                                <span className="text-[0.7rem] text-muted-foreground block">(مخزون: {item.stock} {item.unit})</span>
                             </div>
                           )}
-                           <span className="text-[0.7rem] text-muted-foreground block mt-0.5">(مخزون: {item.stock} {item.unit})</span>
                         </TableCell>
-                        <TableCell className="text-left font-semibold text-foreground text-sm py-2 px-3">
+                        <TableCell className="text-left font-semibold text-foreground text-sm py-2 px-3 align-top">
                           {item.totalItemPrice.toFixed(2)} ل.س
                         </TableCell>
-                        <TableCell className="py-2 px-1">
+                        <TableCell className="py-2 px-1 align-top">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80" onClick={() => removeFromCart(item.id, item.isWeighed)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -634,7 +661,7 @@ const PosPage = () => {
             </ScrollArea>
           </CardContent>
           <Separator className="my-0" />
-          <CardFooter className="flex-shrink-0 p-3 md:p-4 space-y-3">
+          <CardFooter className="flex-shrink-0 p-3 md:p-4 space-y-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">المجموع الفرعي:</span>
               <span className="font-semibold text-foreground">{subTotal.toFixed(2)} ل.س</span>
@@ -659,11 +686,6 @@ const PosPage = () => {
                 >
                     <Percent className="ml-1.5 h-3.5 w-3.5"/> {discountAmount > 0 ? 'تعديل الخصم' : 'إضافة خصم على الإجمالي'}
                 </Button>
-                 {/* زر الكوبون تم إلغاؤه بناءً على الطلب 
-                 <Button variant="outline" className="flex-1 text-xs h-9" disabled>
-                    <TicketX className="ml-1.5 h-3.5 w-3.5"/> تطبيق كوبون (معطل)
-                </Button>
-                */}
             </div>
             <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="text-xs py-2.5 h-auto" disabled><Landmark className="ml-1.5 h-3.5 w-3.5"/> دفع آجل (معطل)</Button>
@@ -673,12 +695,12 @@ const PosPage = () => {
                   ) : (
                     <CreditCard className="ml-1.5 h-4 w-4" />
                   )}
-                  {isLoadingProducts && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن'}
+                  {isLoadingProducts && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن (حفظ وطباعة)'}
                 </Button>
             </div>
              <p className="text-[0.7rem] text-muted-foreground text-center">
                 الضغط على "الدفع الآن" سيقوم بحفظ الفاتورة وتحديث المخزون. 
-                {/* وظيفة الطباعة تتطلب تكاملاً إضافياً. */}
+                {/* TODO: Implement receipt printing functionality here. This may require a separate service or browser print API. */}
              </p>
           </CardFooter>
         </Card>
@@ -786,3 +808,5 @@ export default PosPage;
     
 
     
+
+      
