@@ -98,7 +98,7 @@ const mapFromSupabaseSupplier = (data: any): Supplier => ({
   notes: data.notes,
 });
 
-const mapFromSupabaseInvoice = (data: any, supplierName?: string, items?: PurchaseItem[]): PurchaseInvoice => ({
+const mapFromSupabaseInvoice = (data: any, supplierName?: string): PurchaseInvoice => ({
     id: data.id,
     created_at: data.created_at,
     invoice_number: data.invoice_number,
@@ -348,7 +348,7 @@ const PurchasingPage = () => {
     const subTotalCalculated = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
     const taxAmount = formData.tax_amount || 0; 
     
-    const mainInvoiceData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'notes'> & {notes?: string | null} = {
+    const mainInvoiceData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> = {
         invoice_number: formData.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
         supplier_id: formData.supplier_id,
         invoice_date: formData.invoice_date,
@@ -356,9 +356,7 @@ const PurchasingPage = () => {
         tax_amount: taxAmount,
         grand_total: subTotalCalculated + taxAmount,
         status: formData.status,
-        // notes is intentionally omitted here to avoid the schema cache error,
-        // it can be added back if the 'notes' column exists in Supabase table 'purchase_invoices'.
-        // notes: invoiceNotes || null, 
+        notes: invoiceNotes || null, 
     };
 
     try {
@@ -709,7 +707,6 @@ const PurchasingPage = () => {
                     supplier_id: fd.get('inv-supplier') as string, 
                     status: fd.get('inv-status') as PurchaseInvoice['status'], 
                     tax_amount: parseFloat(fd.get('inv-tax') as string || '0'),
-                    // 'notes' field is not passed to handleSaveInvoice to avoid schema error
                 });
             }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -731,7 +728,7 @@ const PurchasingPage = () => {
                         </Select>
                     </div>
                 </div>
-                 <div><Label htmlFor="inv-notes">ملاحظات الفاتورة (لن يتم حفظها حالياً بسبب عدم وجود عمود في قاعدة البيانات)</Label><Textarea id="inv-notes" name="inv-notes" defaultValue={editingInvoice?.notes || invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} className="mt-1 bg-input/50"/></div>
+                 <div><Label htmlFor="inv-notes">ملاحظات الفاتورة</Label><Textarea id="inv-notes" name="inv-notes" defaultValue={editingInvoice?.notes || invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} className="mt-1 bg-input/50"/></div>
                 <Separator />
                  <Label className="text-lg font-medium">بنود الفاتورة</Label>
                 {currentInvoiceItems.map((item, index) => (
