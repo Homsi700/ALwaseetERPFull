@@ -12,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Edit3, PackageSearch, MinusCircle, ShoppingBasket } from 'lucide-react';
+import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Edit3, PackageSearch, MinusCircle, ShoppingBasket, CheckCircle, XCircle } from 'lucide-react';
 import type { Product as BaseProduct } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
@@ -117,12 +117,12 @@ const PosPage = () => {
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
       (!isProductWeighable(p) || !cart.find(item => item.id === p.id && item.isWeighed)) && 
       p.stock > 0 
-    ).slice(0,12),
+    ).slice(0,12), // Keep the slice for performance on quick add
     [searchTerm, cart, availableProducts] 
   );
 
-  const updateProductStockInState = (productId: string, newStock: number) => {
-    setAvailableProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock < 0 ? 0 : newStock } : p));
+  const updateProductState = (productId: string, newStock: number) => {
+    setAvailableProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
   };
 
   const addProductToCart = useCallback(async (product: Product, quantity: number, isWeighedItem: boolean) => {
@@ -136,76 +136,77 @@ const PosPage = () => {
         return;
     }
     
-    let currentStock = productInState.stock;
+    let currentStockInDB = productInState.stock;
     let effectiveQuantity = quantity;
 
-    if (isWeighedItem) {
-        if (currentStock < quantity) {
-            toast({ title: "تنبيه المخزون", description: `الكمية المتوفرة من ${product.name} هي ${currentStock} ${product.unit}. سيتم إضافة الكمية المتوفرة فقط.`, variant: "destructive"});
-            effectiveQuantity = currentStock;
+    if (isWeighedItem) { // For weighed items, quantity is the actual weight
+        if (currentStockInDB < quantity) {
+            toast({ title: "تنبيه المخزون", description: `الكمية المتوفرة من ${product.name} هي ${currentStockInDB} ${product.unit}. سيتم إضافة الكمية المتوفرة فقط.`, variant: "destructive"});
+            effectiveQuantity = currentStockInDB;
         }
-    } else { // Non-weighed item
+    } else { // For non-weighed items, quantity is the count to add
         const existingCartItem = cart.find(item => item.id === product.id && !item.isWeighed);
         const quantityAlreadyInCart = existingCartItem ? existingCartItem.itemQuantityInCart : 0;
-        if (currentStock < (quantityAlreadyInCart + effectiveQuantity)) {
-             toast({ title: "نفذ المخزون", description: `عفواً، ${product.name} غير متوفر بالكمية المطلوبة. المتوفر بالإضافة لما في السلة: ${currentStock - quantityAlreadyInCart}`, variant: "destructive" });
+
+        if (currentStockInDB < (quantityAlreadyInCart + effectiveQuantity)) {
+             toast({ title: "نفذ المخزون", description: `عفواً، ${product.name} غير متوفر بالكمية المطلوبة. المتوفر بالإضافة لما في السلة: ${Math.max(0, currentStockInDB - quantityAlreadyInCart)}`, variant: "destructive" });
             setIsProcessingCartAction(false);
             return;
         }
     }
-     if (effectiveQuantity <= 0 && currentStock <= 0) {
-        toast({ title: "نفذ المخزون بالكامل", description: `عفواً، ${product.name} غير متوفر حالياً.`, variant: "destructive" });
-        setIsProcessingCartAction(false);
-        return;
-    }
-    if (effectiveQuantity <= 0) { // If after capping, quantity is 0 or less
+
+    if (effectiveQuantity <= 0) {
+        if (currentStockInDB <= 0 && isWeighedItem) toast({ title: "نفذ المخزون بالكامل", description: `عفواً، ${product.name} غير متوفر حالياً.`, variant: "destructive" });
         setIsProcessingCartAction(false);
         return;
     }
 
-
-    const newStockInDB = currentStock - effectiveQuantity;
+    // Attempt to update stock in Supabase first
+    const newStockInDB = currentStockInDB - effectiveQuantity;
     const { error: stockUpdateError } = await supabase
       .from('products')
       .update({ stock: newStockInDB < 0 ? 0 : newStockInDB }) 
-      .eq('id', product.id);
+      .eq('id', product.id)
+      .gte('stock', effectiveQuantity); // Ensure stock is sufficient before update (atomic check)
 
     if (stockUpdateError) {
-      toast({ title: "خطأ في تحديث المخزون", description: `فشل تحديث مخزون ${product.name} في قاعدة البيانات. ${stockUpdateError.message}`, variant: "destructive" });
+      toast({ title: "خطأ في تحديث المخزون", description: `فشل تحديث مخزون ${product.name}. قد يكون المخزون غير كافٍ أو خطأ في الاتصال. ${stockUpdateError.message}`, variant: "destructive" });
       setIsProcessingCartAction(false);
+      await fetchProducts(); // Re-fetch products to ensure local state consistency
       return;
     }
 
-    updateProductStockInState(product.id, newStockInDB);
-    currentStock = newStockInDB; // Update currentStock for cart logic
-
-    const existingItemIndex = cart.findIndex(item => item.id === product.id && item.isWeighed === isWeighedItem);
+    // Update local state for availableProducts
+    updateProductState(product.id, newStockInDB < 0 ? 0 : newStockInDB);
     
+    // Add/Update item in local cart
+    const existingItemIndex = cart.findIndex(item => item.id === product.id && item.isWeighed === isWeighedItem);
     if (existingItemIndex > -1) {
       const updatedCart = [...cart];
       const currentItem = updatedCart[existingItemIndex];
       const newCartQuantity = isWeighedItem ? effectiveQuantity : currentItem.itemQuantityInCart + effectiveQuantity; 
-
+      
       updatedCart[existingItemIndex] = {
         ...currentItem,
         itemQuantityInCart: newCartQuantity,
         totalItemPrice: product.pricePerUnit * newCartQuantity,
-        stock: currentStock < 0 ? 0 : currentStock,
+        stock: newStockInDB < 0 ? 0 : newStockInDB, // Reflect new stock in cart item as well
       };
       setCart(updatedCart);
-      toast({ title: `تم تحديث ${isWeighedItem ? "وزن" : "كمية"} المنتج`, description: `تم تحديث ${product.name} في السلة.` });
+      toast({ title: `تم تحديث ${isWeighedItem ? "وزن" : "كمية"} المنتج`, description: `${product.name} في السلة.` });
     } else {
       setCart(prevCart => [...prevCart, {
         ...product,
         itemQuantityInCart: effectiveQuantity,
         totalItemPrice: product.pricePerUnit * effectiveQuantity,
         isWeighed: isWeighedItem,
-        stock: currentStock < 0 ? 0 : currentStock,
+        stock: newStockInDB < 0 ? 0 : newStockInDB, // Reflect new stock in cart item
       }]);
       toast({ title: "تمت إضافة المنتج", description: `${product.name} أضيف إلى السلة.` });
     }
+
     setIsProcessingCartAction(false);
-  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductStockInState]);
+  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductState, fetchProducts]);
 
   const handleProductSelection = useCallback((product: Product) => {
     const productInState = availableProducts.find(p => p.id === product.id);
@@ -236,26 +237,33 @@ const PosPage = () => {
     
     setIsProcessingCartAction(true);
     const existingCartItem = cart.find(item => item.id === productToWeigh.id && item.isWeighed);
+    const productInDb = availableProducts.find(p => p.id === productToWeigh.id);
+
+    if (!productInDb) {
+        toast({ title: "خطأ", description: "المنتج غير موجود.", variant: "destructive"});
+        setIsProcessingCartAction(false);
+        return;
+    }
     
     if (existingCartItem) {
         // Restore old stock first
+        const stockToRestore = existingCartItem.itemQuantityInCart;
         const { error: stockRevertError } = await supabase
             .from('products')
-            .update({ stock: supabase.sql`stock + ${existingCartItem.itemQuantityInCart}` })
+            .update({ stock: supabase.sql`stock + ${stockToRestore}` })
             .eq('id', productToWeigh.id);
+        
         if (stockRevertError) {
             toast({ title: "خطأ في استرجاع المخزون", description: stockRevertError.message, variant: "destructive"});
             setIsProcessingCartAction(false);
             return;
         }
-        updateProductStockInState(productToWeigh.id, productToWeigh.stock + existingCartItem.itemQuantityInCart);
-        // Temporarily remove from cart for clean re-addition
+        updateProductState(productToWeigh.id, productInDb.stock + stockToRestore);
         setCart(prev => prev.filter(item => !(item.id === productToWeigh.id && item.isWeighed)));
     }
     
-    // Now add the product with the new weight (addProductToCart handles stock deduction)
-    // We need to pass the product *as it is in availableProducts* because its stock might have been updated by the revert step.
-    const freshProductData = availableProducts.find(p => p.id === productToWeigh.id);
+    // Add/update product with new weight (addProductToCart handles new stock deduction)
+    const freshProductData = availableProducts.find(p => p.id === productToWeigh.id); // Get latest stock info
     if (freshProductData) {
         await addProductToCart(freshProductData, weight, true);
     } else {
@@ -267,7 +275,7 @@ const PosPage = () => {
     setWeightInputValue('');
     setIsProcessingCartAction(false);
     barcodeInputRef.current?.focus();
-  }, [productToWeigh, weightInputValue, toast, addProductToCart, cart, availableProducts, isProcessingCartAction, updateProductStockInState]);
+  }, [productToWeigh, weightInputValue, toast, addProductToCart, cart, availableProducts, isProcessingCartAction, updateProductState]);
 
   const handleDirectAddWeighedProduct = useCallback(async () => {
     if (!selectedDirectWeighProduct || !directWeightInput || isProcessingCartAction) return;
@@ -289,7 +297,7 @@ const PosPage = () => {
     if (isProcessingCartAction) return;
     setIsProcessingCartAction(true);
 
-    const newQuantity = Number(newQuantityValue);
+    let newQuantity = Number(newQuantityValue);
     const itemIndex = cart.findIndex(item => item.id === productId && !item.isWeighed);
 
     if (itemIndex === -1) {
@@ -301,7 +309,7 @@ const PosPage = () => {
     const item = updatedCart[itemIndex];
     const oldCartQuantity = item.itemQuantityInCart;
     
-    if (newQuantity <= 0) { // Removing item
+    if (newQuantity <= 0) { // Removing item by setting quantity to 0 or less
         const { error: stockUpdateError } = await supabase
             .from('products')
             .update({ stock: supabase.sql`stock + ${oldCartQuantity}`})
@@ -312,13 +320,13 @@ const PosPage = () => {
             return;
         }
         const productInState = availableProducts.find(p => p.id === productId);
-        if (productInState) updateProductStockInState(productId, productInState.stock + oldCartQuantity);
+        if (productInState) updateProductState(productId, productInState.stock + oldCartQuantity);
         
         updatedCart.splice(itemIndex, 1);
         setCart(updatedCart);
         toast({ title: "تمت إزالة المنتج"});
     } else { // Updating quantity
-        const quantityChange = newQuantity - oldCartQuantity; // Positive if increasing cart qty, negative if decreasing
+        const quantityChange = newQuantity - oldCartQuantity; // Positive if increasing, negative if decreasing
         const productInState = availableProducts.find(p => p.id === productId);
 
         if (!productInState) {
@@ -326,22 +334,22 @@ const PosPage = () => {
             setIsProcessingCartAction(false);
             return;
         }
-        const currentDBStock = productInState.stock; // This stock is after initial additions
+        const currentDBStock = productInState.stock; 
 
-        if (quantityChange > 0 && currentDBStock < quantityChange) {
+        if (quantityChange > 0 && currentDBStock < quantityChange) { // Trying to add more than available
             toast({ title: "تنبيه المخزون", description: `لا يوجد ما يكفي من ${item.name}. المتاح للإضافة: ${currentDBStock}`, variant: "destructive" });
-            item.itemQuantityInCart = oldCartQuantity + currentDBStock; // Add only what's available
+            newQuantity = oldCartQuantity + currentDBStock; // Add only what's available
             const stockChangeInDBForSupabase = -currentDBStock;
 
-             const { error: stockUpdateError } = await supabase
+            const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: supabase.sql`stock + ${stockChangeInDBForSupabase}`})
                 .eq('id', productId);
             if (stockUpdateError) { /* handle error */ }
-            else updateProductStockInState(productId, currentDBStock + stockChangeInDBForSupabase);
+            else updateProductState(productId, productInState.stock + stockChangeInDBForSupabase);
 
-        } else { // Enough stock for increase, or quantity is being decreased
-            const stockChangeInDBForSupabase = -quantityChange;
+        } else { // Enough stock for increase, OR quantity is being decreased
+            const stockChangeInDBForSupabase = -quantityChange; // if quantityChange is negative (decreasing), this becomes positive (add back to stock)
              const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: supabase.sql`stock + ${stockChangeInDBForSupabase}`})
@@ -351,16 +359,17 @@ const PosPage = () => {
                 setIsProcessingCartAction(false);
                 return;
             }
-            updateProductStockInState(productId, currentDBStock + stockChangeInDBForSupabase);
-            item.itemQuantityInCart = newQuantity;
+            updateProductState(productId, productInState.stock + stockChangeInDBForSupabase);
         }
         
+        item.itemQuantityInCart = newQuantity;
         item.totalItemPrice = item.pricePerUnit * item.itemQuantityInCart;
-        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; // Reflect updated stock
+        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; 
         setCart(updatedCart);
+        toast({ title: "تم تحديث الكمية", description: `تم تحديث كمية ${item.name} في السلة.`});
     }
     setIsProcessingCartAction(false);
-  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductStockInState]);
+  }, [cart, toast, availableProducts, isProcessingCartAction, updateProductState]);
 
   const removeFromCart = useCallback(async (productId: string, isWeighedItem: boolean) => {
     if (isProcessingCartAction) return;
@@ -368,6 +377,12 @@ const PosPage = () => {
 
     const itemInCart = cart.find(item => item.id === productId && item.isWeighed === isWeighedItem);
     if (!itemInCart) {
+        setIsProcessingCartAction(false);
+        return;
+    }
+    const productInState = availableProducts.find(p => p.id === productId);
+    if (!productInState) {
+         toast({ title: "خطأ", description: "المنتج المراد إزالته غير موجود في القائمة.", variant: "destructive"});
         setIsProcessingCartAction(false);
         return;
     }
@@ -382,16 +397,12 @@ const PosPage = () => {
       setIsProcessingCartAction(false);
       return;
     }
-
-    const productInState = availableProducts.find(p => p.id === productId);
-    if (productInState) {
-        updateProductStockInState(productId, productInState.stock + itemInCart.itemQuantityInCart);
-    }
     
+    updateProductState(productId, productInState.stock + itemInCart.itemQuantityInCart);
     setCart(prevCart => prevCart.filter(item => !(item.id === productId && item.isWeighed === isWeighedItem) ));
     toast({ title: "تمت إزالة المنتج", description: "تمت إزالة المنتج من السلة واسترجاع المخزون." });
     setIsProcessingCartAction(false);
-  }, [toast, cart, availableProducts, isProcessingCartAction, updateProductStockInState]);
+  }, [toast, cart, availableProducts, isProcessingCartAction, updateProductState]);
 
   const subTotal = useMemo(() => 
     cart.reduce((sum, item) => sum + item.totalItemPrice, 0),
@@ -408,10 +419,10 @@ const PosPage = () => {
     const product = availableProducts.find(p => p.barcodeNumber === barcode.trim());
 
     if (product) {
-        if (product.stock <=0 && !isProductWeighable(product)) {
+        if (product.stock <=0 && !isProductWeighable(product)) { // Check stock for non-weighable
             toast({ title: "نفذ المخزون", description: `منتج الباركود ${product.name} غير متوفر.`, variant: "destructive" });
         } else if (isProductWeighable(product)) {
-            if (product.stock <= 0) {
+            if (product.stock <= 0) { // Also check stock for weighable before opening modal
                toast({ title: "نفذ المخزون", description: `منتج الباركود ${product.name} غير متوفر للوزن.`, variant: "destructive" });
             } else {
                 setProductToWeigh(product); 
@@ -420,7 +431,7 @@ const PosPage = () => {
                 setIsWeightModalOpen(true);
                 setTimeout(() => weightInputModalRef.current?.focus(), 0);
             }
-        } else { // Non-weighable item
+        } else { // Non-weighable item, add to cart
             await addProductToCart(product, 1, false);
         }
     } else {
@@ -473,10 +484,10 @@ const PosPage = () => {
         .from('sales')
         .insert({
           total_amount: cartTotal, 
-          discount_amount: discountAmount, // Add this column to your 'sales' table if you want to store it.
+          discount_amount: discountAmount, // Add this column to your 'sales' table in Supabase.
           payment_method: 'Cash', 
           sale_date: new Date().toISOString(),
-          user_id: user.id, // Ensure user_id is being passed; 'user' from useAuth() should have it.
+          user_id: user.id,
         })
         .select()
         .single();
@@ -497,17 +508,17 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
       
-      toast({ title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تسجيل البيع.` });
+      toast({ icon: <CheckCircle className="text-green-500" />, title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تسجيل البيع.` });
       setCart([]); 
       setSelectedDirectWeighProduct(null);
       setDirectWeightInput('');
       setDiscountAmount(0);
       setDiscountInput('');
       barcodeInputRef.current?.focus();
-      // await fetchProducts(); // Product stock is updated in real-time, but a fresh fetch can ensure UI consistency if other factors change stock.
+      // await fetchProducts(); // Re-fetching products for general UI consistency, though stock is live updated.
     } catch (error: any) {
       console.error("خطأ أثناء الدفع:", error);
-      toast({ title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع أو تحديث المخزون.", variant: "destructive"});
+      toast({ icon: <XCircle className="text-red-500" />, title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع. المخزون قد تم تحديثه بالفعل مع تعديلات السلة.", variant: "destructive"});
     } finally {
         setIsProcessingCartAction(false);
     }
@@ -554,9 +565,9 @@ const PosPage = () => {
 
   return (
     <AppLayout>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-7rem)] max-h-[calc(100vh-7rem)]">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 h-[calc(100vh-7rem)] max-h-[calc(100vh-7rem)]">
         {/* Left Panel: Product Search & Quick Add - Simplified */}
-        <div className="lg:col-span-1 flex flex-col gap-3">
+        <div className="lg:col-span-2 flex flex-col gap-3">
           <Card className="shadow-sm">
             <CardHeader className="pb-2 pt-3 px-3">
               <CardTitle className="font-headline text-base text-foreground">بحث وإضافة سريعة</CardTitle>
@@ -595,7 +606,7 @@ const PosPage = () => {
                       if (product) setTimeout(()=> directWeightInputRef.current?.focus(),0);
                     }}
                     dir="rtl"
-                    disabled={isProcessingCartAction || isLoadingProducts}
+                    disabled={isProcessingCartAction || isLoadingProducts || weighableProductsForSelect.length === 0}
                   >
                     <SelectTrigger className="bg-input/50 focus:bg-input h-9 text-xs">
                       <SelectValue placeholder={isLoadingProducts ? "جاري التحميل..." : weighableProductsForSelect.length > 0 ? "اختر منتجًا للوزن..." : "لا منتجات موزونة"} />
@@ -630,24 +641,24 @@ const PosPage = () => {
 
           <Card className="shadow-sm flex-1 flex flex-col min-h-0">
             <CardHeader className="pb-1.5 pt-2.5 px-3">
-              <CardTitle className="font-headline text-sm text-foreground">منتجات للإضافة السريعة</CardTitle>
+              <CardTitle className="font-headline text-sm text-foreground">منتجات للإضافة السريعة (غير موزونة)</CardTitle>
             </CardHeader>
             <CardContent className="flex-1 p-2 overflow-hidden">
               <ScrollArea className="h-full pr-1">
                 {isLoadingProducts && availableProducts.length === 0 ? (
                     <div className="flex justify-center items-center h-full"> <PackageSearch className="h-10 w-10 text-muted-foreground/30 animate-pulse" /> </div>
                 ) : filteredProductsForQuickAdd.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                     {filteredProductsForQuickAdd.map(product => (
                       <Button 
                         key={product.id} variant="outline" 
-                        className="h-auto p-1.5 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[60px] relative text-[0.7rem] leading-tight shadow-sm hover:shadow-md"
+                        className="h-auto p-1.5 flex flex-col items-center justify-center text-center whitespace-normal break-words min-h-[70px] relative text-[0.7rem] leading-tight shadow-sm hover:shadow-md"
                         onClick={() => handleProductSelection(product)}
                         disabled={product.stock <= 0 || isProcessingCartAction}
                       >
                         {product.stock <= 0 && <Badge variant="destructive" className="absolute top-0.5 right-0.5 text-[0.5rem] px-0.5 py-0 leading-none">نفذ</Badge>}
                         <Image src={product.image || `https://placehold.co/24x24.png?text=${encodeURIComponent(product.name.charAt(0))}`} alt={product.name} width={24} height={24} className="mb-0.5 rounded" data-ai-hint={product.dataAiHint || "item product"}/>
-                        <span className="text-[0.65rem] leading-tight block max-h-6 overflow-hidden">{product.name}</span>
+                        <span className="text-[0.65rem] leading-tight block max-h-6 overflow-hidden font-medium">{product.name}</span>
                         <span className="text-[0.6rem] font-semibold text-primary block">{product.pricePerUnit.toFixed(2)}/{product.unit}</span>
                         <span className="text-[0.55rem] text-muted-foreground block">(م: {product.stock})</span>
                       </Button>
@@ -660,7 +671,7 @@ const PosPage = () => {
         </div>
 
         {/* Right Panel: Current Sale - Redesigned */}
-        <Card className="lg:col-span-2 shadow-lg flex flex-col h-full">
+        <Card className="lg:col-span-3 shadow-lg flex flex-col h-full">
           <CardHeader className="flex-shrink-0 pb-2 pt-3 px-4 flex flex-row justify-between items-center border-b">
             <CardTitle className="font-headline text-lg text-foreground flex items-center"><ShoppingBasket className="ml-2 h-5 w-5 text-primary"/>السلة الحالية</CardTitle>
             {cart.length > 0 && <Badge variant="secondary" className="text-sm">{cart.length} أصناف</Badge>}
@@ -677,16 +688,16 @@ const PosPage = () => {
               <Table className="text-xs">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="py-2 px-3 w-[45%]">المنتج</TableHead>
-                    <TableHead className="text-center py-2 px-2 w-[30%]">الكمية/الوزن (المخزون)</TableHead>
+                    <TableHead className="py-2 px-3 w-[40%]">المنتج</TableHead>
+                    <TableHead className="text-center py-2 px-2 w-[35%]">الكمية/الوزن (مخزون: {cart.length > 0 ? cart[0].stock : 0})</TableHead>
                     <TableHead className="text-left py-2 px-2 w-[20%]">السعر الإجمالي</TableHead>
                     <TableHead className="py-2 px-1 w-[5%]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                     {cart.map(item => (
-                      <TableRow key={`${item.id}-${item.isWeighed}`} className="border-b">
-                        <TableCell className="py-2 px-3 align-top">
+                      <TableRow key={`${item.id}-${item.isWeighed}`} className="border-b align-top">
+                        <TableCell className="py-2 px-3">
                           <div className="flex items-start gap-2">
                             <Image src={item.image || `https://placehold.co/32x32.png?text=${encodeURIComponent(item.name.charAt(0))}`} alt={item.name} width={32} height={32} className="rounded object-cover mt-0.5 shrink-0" data-ai-hint={item.dataAiHint || "item product"}/>
                             <div className="flex-grow min-w-0">
@@ -695,22 +706,25 @@ const PosPage = () => {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center py-2 px-2 align-top">
+                        <TableCell className="text-center py-2 px-2">
                           {item.isWeighed ? (
                             <div className="flex flex-col items-center justify-center gap-0.5">
                                 <div className="flex items-center gap-1">
                                     <span className="font-medium text-xs">{item.itemQuantityInCart.toFixed(3)} {item.unit}</span>
                                     <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleProductSelection(item)} disabled={isProcessingCartAction}> <Edit3 className="h-3 w-3 text-primary" /> </Button>
                                 </div>
-                                <span className="text-[0.65rem] text-muted-foreground block">(م: {item.stock})</span>
+                                <span className="text-[0.65rem] text-muted-foreground block">(م: {availableProducts.find(p=>p.id===item.id)?.stock || 0})</span>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center justify-center gap-0.5">
                                 <div className="flex items-center justify-center gap-1">
                                 <Button variant="outline" size="icon" className="h-6 w-6 border-primary/50 text-primary" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart - 1)} disabled={isProcessingCartAction}> <Minus className="h-3 w-3" /> </Button>
                                 <Input type="number" value={item.itemQuantityInCart} 
-                                    onChange={(e) => updateCartItemQuantity(item.id, e.target.value)} 
-                                    onBlur={(e) => { /* Simplified blur for brevity, ensure validation */
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if(!isNaN(val)) updateCartItemQuantity(item.id, val);
+                                    }} 
+                                    onBlur={(e) => {
                                         const val = parseInt(e.target.value);
                                         if (isNaN(val) || val < 1) updateCartItemQuantity(item.id, 1);
                                     }}
@@ -720,14 +734,14 @@ const PosPage = () => {
                                 />
                                 <Button variant="outline" size="icon" className="h-6 w-6 border-primary/50 text-primary" onClick={() => updateCartItemQuantity(item.id, item.itemQuantityInCart + 1)} disabled={isProcessingCartAction}> <Plus className="h-3 w-3" /> </Button>
                                 </div>
-                                <span className="text-[0.65rem] text-muted-foreground block">(م: {item.stock})</span>
+                                <span className="text-[0.65rem] text-muted-foreground block">(م: {availableProducts.find(p=>p.id===item.id)?.stock || 0})</span>
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-left font-semibold text-foreground text-xs py-2 px-2 align-top">
+                        <TableCell className="text-left font-semibold text-foreground text-xs py-2 px-2">
                           {item.totalItemPrice.toFixed(2)} ل.س
                         </TableCell>
-                        <TableCell className="py-2 px-1 align-top">
+                        <TableCell className="py-2 px-1">
                           <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive/80" onClick={() => removeFromCart(item.id, item.isWeighed)} disabled={isProcessingCartAction}> <Trash2 className="h-3.5 w-3.5" /> </Button>
                         </TableCell>
                       </TableRow>
@@ -774,7 +788,7 @@ const PosPage = () => {
               {isProcessingCartAction && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن (حفظ الفاتورة)'}
             </Button>
              <p className="text-xs text-muted-foreground text-center pt-1">
-                الضغط على "الدفع الآن" سيقوم بحفظ الفاتورة. الطباعة ميزة منفصلة.
+                الضغط على "الدفع الآن" سيقوم بحفظ الفاتورة. ميزة الطباعة تتطلب إعدادات إضافية.
              </p>
           </CardFooter>
         </Card>
@@ -824,7 +838,7 @@ const PosPage = () => {
                     <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 text-sm" disabled={!productToWeigh || !weightInputValue || parseFloat(weightInputValue) <= 0 || isProcessingCartAction || ((availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock) < parseFloat(weightInputValue))}>
                         {cart.find(item => item.id === productToWeigh?.id && item.isWeighed) ? 'تحديث الوزن' : 'إضافة للسلة'}
                     </Button>
-                    <DialogClose asChild> <Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button> </DialogClose>
+                    <DialogClose asChild><Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button></DialogClose>
                 </DialogFooter>
               </form>
             )}
@@ -850,7 +864,7 @@ const PosPage = () => {
             </div>
             <DialogFooter className="mt-2 pt-2 border-t">
                 <Button type="submit" className="bg-accent hover:bg-accent/90 text-accent-foreground h-9 text-sm">تطبيق الخصم</Button>
-                <DialogClose asChild> <Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button> </DialogClose>
+                <DialogClose asChild><Button type="button" variant="outline" className="h-9 text-sm">إلغاء</Button></DialogClose>
             </DialogFooter>
             </form>
         </DialogContent>
