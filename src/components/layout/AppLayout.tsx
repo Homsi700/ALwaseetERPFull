@@ -22,7 +22,7 @@ import {
   useSidebarAlt, 
 } from '@/components/ui/sidebar-alt';
 import {
-  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, SettingsIcon
+  LayoutDashboard, Package, ShoppingCart, Truck, Users, FileText, LogOut, Building, Menu, SettingsIcon, Handshake
 } from 'lucide-react';
 
 interface NavItem {
@@ -37,6 +37,7 @@ const navItems: NavItem[] = [
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
   { href: '/purchasing', icon: Truck, label: 'المشتريات' },
   { href: '/clients', icon: Users, label: 'العملاء' },
+  { href: '/partners', icon: Handshake, label: 'الشركاء' },
   { href: '/reports', icon: FileText, label: 'التقارير المالية' },
   { href: '/settings', icon: SettingsIcon, label: 'الإعدادات' },
 ];

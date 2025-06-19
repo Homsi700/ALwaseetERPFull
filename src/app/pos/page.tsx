@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Edit3, PackageSearch, MinusCircle, ShoppingBasket, CheckCircle, XCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import { QrCode, Search, Plus, Minus, Trash2, CreditCard, Percent, Edit3, PackageSearch, MinusCircle, ShoppingBasket, CheckCircle, XCircle, Handshake } from 'lucide-react';
 import type { Product as BaseProduct } from '@/components/products/ProductTable'; 
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
@@ -31,6 +31,12 @@ interface CartItem extends Product {
   isWeighed: boolean;
 }
 
+interface Partner {
+  partner_id: string;
+  partner_name: string;
+  profit_share_percentage: number;
+}
+
 const PosPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -38,7 +44,11 @@ const PosPage = () => {
   const { user } = useAuth();
 
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [availablePartners, setAvailablePartners] = useState<Partner[]>([]);
+  const [selectedPartner, setSelectedPartner] = useState<string | undefined>(undefined);
+
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isLoadingPartners, setIsLoadingPartners] = useState(true);
   const [isProcessingCartAction, setIsProcessingCartAction] = useState(false);
 
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
@@ -98,9 +108,28 @@ const PosPage = () => {
     }
   }, [toast, user, mapFromSupabaseProduct]);
 
+  const fetchPartners = useCallback(async () => {
+    if(!user) return;
+    setIsLoadingPartners(true);
+    try {
+      const { data, error } = await supabase
+        .from('partners')
+        .select('partner_id, partner_name, profit_share_percentage')
+        .order('partner_name', { ascending: true });
+      if (error) throw error;
+      setAvailablePartners(data || []);
+    } catch (error: any) {
+      toast({ title: 'خطأ في جلب الشركاء', description: error.message, variant: 'destructive'});
+    } finally {
+      setIsLoadingPartners(false);
+    }
+  }, [toast, user]);
+
+
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+    fetchPartners();
+  }, [fetchProducts, fetchPartners]);
 
   const isProductWeighable = (product: Product): boolean => {
     const unit = product.unit?.toLowerCase();
@@ -166,7 +195,7 @@ const PosPage = () => {
       .from('products')
       .update({ stock: newStockInDB < 0 ? 0 : newStockInDB }) 
       .eq('id', product.id)
-      .gte('stock', effectiveQuantity); 
+      .gte('stock', effectiveQuantity); // Ensure stock is sufficient before update
 
     if (stockUpdateError) {
       toast({ title: "خطأ في تحديث المخزون", description: `فشل تحديث مخزون ${product.name}. قد يكون المخزون غير كافٍ أو خطأ في الاتصال. ${stockUpdateError.message}`, variant: "destructive" });
@@ -242,7 +271,7 @@ const PosPage = () => {
         return;
     }
     
-    if (existingCartItem) {
+    if (existingCartItem) { // If item is already in cart, restore its stock before re-adding
         const stockToRestore = existingCartItem.itemQuantityInCart;
         const { error: stockRevertError } = await supabase
             .from('products')
@@ -254,13 +283,13 @@ const PosPage = () => {
             setIsProcessingCartAction(false);
             return;
         }
-        updateProductState(productToWeigh.id, productInDb.stock + stockToRestore);
-        setCart(prev => prev.filter(item => !(item.id === productToWeigh.id && item.isWeighed)));
+        updateProductState(productToWeigh.id, productInDb.stock + stockToRestore); // Update local state
+        setCart(prev => prev.filter(item => !(item.id === productToWeigh.id && item.isWeighed))); // Remove old item from cart
     }
     
     const freshProductData = availableProducts.find(p => p.id === productToWeigh.id); 
     if (freshProductData) {
-        await addProductToCart(freshProductData, weight, true);
+        await addProductToCart(freshProductData, weight, true); // Add with new weight (stock check happens inside)
     } else {
         toast({ title: "خطأ", description: "لم يتم العثور على المنتج لتحديث وزنه.", variant: "destructive"});
     }
@@ -304,10 +333,10 @@ const PosPage = () => {
     const item = updatedCart[itemIndex];
     const oldCartQuantity = item.itemQuantityInCart;
     
-    if (newQuantity <= 0) { 
+    if (newQuantity <= 0) { // Remove item from cart
         const { error: stockUpdateError } = await supabase
             .from('products')
-            .update({ stock: supabase.sql`stock + ${oldCartQuantity}`})
+            .update({ stock: supabase.sql`stock + ${oldCartQuantity}`}) // Restore stock
             .eq('id', productId);
         if (stockUpdateError) {
             toast({ title: "خطأ في تحديث المخزون", description: stockUpdateError.message, variant: "destructive" });
@@ -320,8 +349,8 @@ const PosPage = () => {
         updatedCart.splice(itemIndex, 1);
         setCart(updatedCart);
         toast({ title: "تمت إزالة المنتج"});
-    } else { 
-        const quantityChange = newQuantity - oldCartQuantity; 
+    } else { // Update quantity
+        const quantityChange = newQuantity - oldCartQuantity; // Positive if increasing, negative if decreasing
         const productInState = availableProducts.find(p => p.id === productId);
 
         if (!productInState) {
@@ -331,10 +360,10 @@ const PosPage = () => {
         }
         const currentDBStock = productInState.stock; 
 
-        if (quantityChange > 0 && currentDBStock < quantityChange) { 
+        if (quantityChange > 0 && currentDBStock < quantityChange) { // Trying to add more than available
             toast({ title: "تنبيه المخزون", description: `لا يوجد ما يكفي من ${item.name}. المتاح للإضافة: ${currentDBStock}`, variant: "destructive" });
-            newQuantity = oldCartQuantity + currentDBStock; 
-            const stockChangeInDBForSupabase = -currentDBStock;
+            newQuantity = oldCartQuantity + currentDBStock; // Add only what's available
+            const stockChangeInDBForSupabase = -currentDBStock; // Decrease DB stock by available amount
 
             const { error: stockUpdateError } = await supabase
                 .from('products')
@@ -343,8 +372,8 @@ const PosPage = () => {
             if (stockUpdateError) { toast({ title: "خطأ تحديث المخزون", description: stockUpdateError.message, variant: "destructive" }); }
             else updateProductState(productId, productInState.stock + stockChangeInDBForSupabase);
 
-        } else { 
-            const stockChangeInDBForSupabase = -quantityChange; 
+        } else { // Sufficient stock or decreasing quantity
+            const stockChangeInDBForSupabase = -quantityChange; // If quantityChange is negative (decreasing), this becomes positive (restoring stock)
              const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: supabase.sql`stock + ${stockChangeInDBForSupabase}`})
@@ -359,7 +388,7 @@ const PosPage = () => {
         
         item.itemQuantityInCart = newQuantity;
         item.totalItemPrice = item.pricePerUnit * item.itemQuantityInCart;
-        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; 
+        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; // Update item in cart with new stock
         setCart(updatedCart);
         toast({ title: "تم تحديث الكمية", description: `تم تحديث كمية ${item.name} في السلة.`});
     }
@@ -382,6 +411,7 @@ const PosPage = () => {
         return;
     }
 
+    // Restore stock in DB
     const { error: stockUpdateError } = await supabase
       .from('products')
       .update({ stock: supabase.sql`stock + ${itemInCart.itemQuantityInCart}` })
@@ -393,7 +423,7 @@ const PosPage = () => {
       return;
     }
     
-    updateProductState(productId, productInState.stock + itemInCart.itemQuantityInCart);
+    updateProductState(productId, productInState.stock + itemInCart.itemQuantityInCart); // Update local state
     setCart(prevCart => prevCart.filter(item => !(item.id === productId && item.isWeighed === isWeighedItem) ));
     toast({ title: "تمت إزالة المنتج", description: "تمت إزالة المنتج من السلة واسترجاع المخزون." });
     setIsProcessingCartAction(false);
@@ -472,15 +502,36 @@ const PosPage = () => {
 
     setIsProcessingCartAction(true); 
 
+    // Calculate partner share amount
+    let totalCostOfGoodsSold = 0;
+    for (const item of cart) {
+      // Ensure purchasePrice is part of CartItem and available.
+      // It should be if CartItem extends Product and Product has purchasePrice.
+      totalCostOfGoodsSold += item.itemQuantityInCart * item.purchasePrice;
+    }
+    const saleProfit = cartTotal - totalCostOfGoodsSold; // cartTotal already considers discounts
+    let partnerShareAmountValue: number | null = null;
+
+    if (selectedPartner && saleProfit > 0) {
+      const partnerDetails = availablePartners.find(p => p.partner_id === selectedPartner);
+      if (partnerDetails) {
+        partnerShareAmountValue = saleProfit * (partnerDetails.profit_share_percentage / 100.0);
+        partnerShareAmountValue = parseFloat(partnerShareAmountValue.toFixed(2)); // Ensure two decimal places
+      }
+    }
+
+
     try {
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
           total_amount: cartTotal, 
-          discount_amount: discountAmount, 
+          discount_amount: discountAmount > 0 ? discountAmount : null, // Save discount if applied
           payment_method: 'Cash', 
           sale_date: new Date().toISOString(),
           user_id: user.id,
+          partner_id: selectedPartner || null,
+          partner_share_amount: partnerShareAmountValue,
         })
         .select()
         .single();
@@ -501,12 +552,15 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
       
+      // Stock is already updated with each cart modification, no need to update here again.
+      
       toast({ icon: <CheckCircle className="text-green-500" />, title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تسجيل البيع.` });
       setCart([]); 
       setSelectedDirectWeighProduct(null);
       setDirectWeightInput('');
       setDiscountAmount(0);
       setDiscountInput('');
+      setSelectedPartner(undefined);
       barcodeInputRef.current?.focus();
     } catch (error: any) {
       console.error("خطأ أثناء الدفع:", error);
@@ -535,7 +589,7 @@ const PosPage = () => {
     setIsDiscountModalOpen(false);
   };
 
-  if (isLoadingProducts && !user && cart.length === 0) { 
+  if (isLoadingProducts && isLoadingPartners && !user && cart.length === 0) { 
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -545,7 +599,7 @@ const PosPage = () => {
     );
   }
   
-  if (!user && !isLoadingProducts) { 
+  if (!user && !isLoadingProducts && !isLoadingPartners) { 
      return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -705,7 +759,7 @@ const PosPage = () => {
                                     <span className="font-medium text-xs">{item.itemQuantityInCart.toFixed(3)} {item.unit}</span>
                                     <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleProductSelection(item)} disabled={isProcessingCartAction}> <Edit3 className="h-3 w-3 text-primary" /> </Button>
                                 </div>
-                                <span className="text-[0.65rem] text-muted-foreground block">(م: {availableProducts.find(p=>p.id===item.id)?.stock || 0})</span>
+                                <span className="text-[0.65rem] text-muted-foreground block">(م: {(availableProducts.find(p=>p.id===item.id)?.stock || 0).toFixed(2)})</span>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center justify-center gap-0.5">
@@ -756,6 +810,26 @@ const PosPage = () => {
                 <span className="font-semibold">-{discountAmount.toFixed(2)} ل.س</span>
               </div>
             )}
+
+            <div className="w-full">
+              <Label htmlFor="pos-partner-select" className="text-xs text-muted-foreground">اختيار الشريك (اختياري)</Label>
+              <Select
+                value={selectedPartner}
+                onValueChange={(value) => setSelectedPartner(value === "NO_PARTNER_SELECTED" ? undefined : value)}
+                dir="rtl"
+                disabled={isProcessingCartAction || isLoadingPartners}
+              >
+                <SelectTrigger id="pos-partner-select" className="mt-0.5 bg-input/50 focus:bg-input h-9 text-xs w-full">
+                  <SelectValue placeholder={isLoadingPartners ? "جاري تحميل الشركاء..." : "بدون شريك"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NO_PARTNER_SELECTED" className="text-xs">بدون شريك</SelectItem>
+                  {availablePartners.map(p => (
+                    <SelectItem key={p.partner_id} value={p.partner_id} className="text-xs">{p.partner_name} ({p.profit_share_percentage}%)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             
             <div className="flex justify-between items-center w-full text-lg font-semibold border-t pt-2 mt-1">
               <span className="text-muted-foreground">الإجمالي:</span>
@@ -774,14 +848,14 @@ const PosPage = () => {
             <Button 
                 className="w-full text-base py-2 h-11 bg-purple-600 hover:bg-purple-700 text-primary-foreground" 
                 onClick={handleCheckout} 
-                disabled={cart.length === 0 || isProcessingCartAction || isLoadingProducts}
+                disabled={cart.length === 0 || isProcessingCartAction || isLoadingProducts || isLoadingPartners}
             >
               {isProcessingCartAction && cart.length > 0 ? (
                  <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2"></div>
               ) : (
                 <CreditCard className="mr-2 h-5 w-5" />
               )}
-              {isProcessingCartAction && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن (حفظ الفاتورة)'}
+              {isProcessingCartAction && cart.length > 0 ? 'جاري المعالجة...' : 'الدفع الآن'}
             </Button>
           </CardFooter>
         </Card>
@@ -801,7 +875,7 @@ const PosPage = () => {
                         <div>
                             <p className="font-medium text-sm">{productToWeigh.name}</p>
                             <p className="text-xs text-muted-foreground">{productToWeigh.pricePerUnit.toFixed(2)} ل.س / {productToWeigh.unit}</p>
-                            <p className="text-[0.7rem] text-muted-foreground">المخزون: {availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock} {productToWeigh.unit}</p>
+                            <p className="text-[0.7rem] text-muted-foreground">المخزون: {(availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock).toFixed(2)} {productToWeigh.unit}</p>
                         </div>
                     </div>
                     <div>
@@ -814,7 +888,7 @@ const PosPage = () => {
                             onChange={(e) => setWeightInputValue(e.target.value)}
                             placeholder={`مثال: 0.250`}
                             className="mt-0.5 bg-input/50 focus:bg-input text-sm h-9"
-                            step="0.001" min="0.001" max={availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock}
+                            step="0.001" min="0.001" max={(availableProducts.find(p=>p.id === productToWeigh.id)?.stock || productToWeigh.stock)}
                             autoFocus
                         />
                     </div>
@@ -872,4 +946,3 @@ const PosPage = () => {
 };
 
 export default PosPage;
-    
