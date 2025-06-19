@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Users, Cog, Store, Package, ShoppingCart, Link2, LayoutDashboard } from 'lucide-react';
+import { Users, Cog, Store, Package, ShoppingCart, Link2, LayoutDashboard, UsersRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 const SettingsPage = () => {
@@ -33,7 +33,7 @@ const SettingsPage = () => {
             <TabsTrigger value="general"><Store className="ml-1 h-4 w-4 sm:hidden md:inline-block" />الإعدادات العامة</TabsTrigger>
             <TabsTrigger value="inventory"><Package className="ml-1 h-4 w-4 sm:hidden md:inline-block" />إعدادات المخزون</TabsTrigger>
             <TabsTrigger value="pos"><ShoppingCart className="ml-1 h-4 w-4 sm:hidden md:inline-block" />إعدادات المبيعات</TabsTrigger>
-            <TabsTrigger value="users"><Users className="ml-1 h-4 w-4 sm:hidden md:inline-block" />المستخدمين والصلاحيات</TabsTrigger>
+            <TabsTrigger value="users"><UsersRound className="ml-1 h-4 w-4 sm:hidden md:inline-block" />المستخدمين والصلاحيات</TabsTrigger>
             <TabsTrigger value="integration"><Link2 className="ml-1 h-4 w-4 sm:hidden md:inline-block" />الربط التقني</TabsTrigger>
             <TabsTrigger value="homeScreen"><LayoutDashboard className="ml-1 h-4 w-4 sm:hidden md:inline-block" />الشاشة الرئيسية</TabsTrigger>
           </TabsList>
@@ -64,7 +64,7 @@ const SettingsPage = () => {
                         <SelectValue placeholder="اختر العملة" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="SYP">ليرة سورية (SYP)</SelectItem>
+                        <SelectItem value="SYP">ليرة سورية (ل.س)</SelectItem>
                         <SelectItem value="USD">دولار أمريكي (USD)</SelectItem>
                       </SelectContent>
                     </Select>
@@ -90,11 +90,9 @@ const SettingsPage = () => {
                 <div>
                   <Label>إدارة وحدات القياس</Label>
                   <p className="text-sm text-muted-foreground mt-1">وحدات القياس المدعومة حالياً: قطعة، كيلو، متر، غرام، علبة، لتر، طرد.</p>
-                  {/* <Input placeholder="أضف وحدة قياس جديدة (مثال: صندوق)" className="mt-2 bg-input/50 focus:bg-input" /> */}
-                  {/* <Button variant="outline" className="mt-2">إضافة وحدة</Button> */}
                    <p className="text-xs text-accent mt-2">ملاحظة: سيتم تطوير واجهة متقدمة لإدارة الوحدات لاحقاً.</p>
                 </div>
-                <Separator />
+                <hr className="border-border"/>
                 <div className="space-y-3">
                   <Label>تنبيهات المخزون</Label>
                   <div className="flex items-center space-x-reverse space-x-2">
@@ -106,7 +104,7 @@ const SettingsPage = () => {
                     <Input id="alertThreshold" type="number" placeholder="مثال: 10" className="mt-1 bg-input/50 focus:bg-input w-full md:w-1/2" />
                   </div>
                 </div>
-                 <Separator />
+                 <hr className="border-border"/>
                 <div className="space-y-3">
                   <Label>إدارة الدفعات وتواريخ الانتهاء</Label>
                   <div className="flex items-center space-x-reverse space-x-2">
@@ -154,12 +152,12 @@ const SettingsPage = () => {
                         </Select>
                     </div>
                 </div>
-                 <Separator />
+                 <hr className="border-border"/>
                 <div>
                   <Label>أجهزة المسح الضوئي للباركود</Label>
                   <p className="text-sm text-muted-foreground mt-1">عادةً ما يتم اكتشاف أجهزة المسح الضوئي USB تلقائياً عند توصيلها.</p>
                 </div>
-                 <Separator />
+                 <hr className="border-border"/>
                 <div>
                     <Label>طرق الدفع المتاحة</Label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-2">
@@ -169,7 +167,7 @@ const SettingsPage = () => {
                         <div className="flex items-center space-x-reverse space-x-2"> <Checkbox id="payWallet" /> <Label htmlFor="payWallet">محفظة رقمية</Label> </div>
                     </div>
                 </div>
-                <Separator />
+                <hr className="border-border"/>
                 <div className="space-y-3">
                   <Label>خيارات الخصم</Label>
                   <div className="flex items-center space-x-reverse space-x-2">
@@ -185,14 +183,17 @@ const SettingsPage = () => {
           <TabsContent value="users">
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle className="font-headline text-xl text-foreground">إعدادات المستخدمين والصلاحيات</CardTitle>
-                <CardDescription>إدارة الوصول والأدوار لمستخدمي النظام.</CardDescription>
+                <CardTitle className="font-headline text-xl text-foreground">إدارة المستخدمين والصلاحيات</CardTitle>
+                <CardDescription>إدارة الوصول والأدوار لمستخدمي النظام. يتم الوصول إلى هذه الوظيفة من خلال صفحتها المخصصة.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-muted-foreground">يمكنك إدارة المستخدمين، تعيين الأدوار، وتحديد الصلاحيات لكل دور من خلال قسم إدارة المستخدمين المخصص.</p>
                 <Button variant="outline" onClick={() => router.push('/users')}>
                   <Users className="ml-2 h-4 w-4" /> الانتقال إلى إدارة المستخدمين
                 </Button>
+                 <p className="text-sm text-muted-foreground mt-2">
+                  ملاحظة: عمليات الإنشاء والتعديل والحذف للمستخدمين من خلال تلك الصفحة هي حالياً عمليات وهمية (تؤثر على الواجهة فقط) وتتطلب تكاملاً آمناً مع Supabase (عبر Edge Functions) ليتم تفعيلها بشكل كامل في قاعدة البيانات.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>
