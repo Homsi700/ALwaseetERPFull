@@ -329,8 +329,6 @@ const PurchasingPage = () => {
   };
 
   const handleDeleteInvoice = async (id: string) => { 
-    // Note: Deleting a purchase invoice ideally should offer an option to revert stock changes,
-    // but this is complex and beyond current scope. Stock will remain as updated during invoice creation.
     console.warn(`Deleting purchase invoice ${id}. Stock will not be automatically reverted.`);
     try {
         const { error: itemError } = await supabase.from('purchase_invoice_items').delete().eq('purchase_invoice_id', id);
@@ -346,11 +344,11 @@ const PurchasingPage = () => {
     }
   };
 
-  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'> & {items?: PurchaseItem[]}) => {
+  const handleSaveInvoice = async (formData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'notes'> & {items?: PurchaseItem[], tax_amount: number}) => {
     const subTotalCalculated = currentInvoiceItems.reduce((sum, item) => sum + item.total_price, 0);
     const taxAmount = formData.tax_amount || 0; 
     
-    const mainInvoiceData = {
+    const mainInvoiceData: Omit<PurchaseInvoice, 'id'|'created_at'|'supplier_name'|'notes'> & {notes?: string | null} = {
         invoice_number: formData.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
         supplier_id: formData.supplier_id,
         invoice_date: formData.invoice_date,
@@ -358,7 +356,9 @@ const PurchasingPage = () => {
         tax_amount: taxAmount,
         grand_total: subTotalCalculated + taxAmount,
         status: formData.status,
-        notes: formData.notes || null,
+        // notes is intentionally omitted here to avoid the schema cache error,
+        // it can be added back if the 'notes' column exists in Supabase table 'purchase_invoices'.
+        // notes: invoiceNotes || null, 
     };
 
     try {
@@ -384,7 +384,6 @@ const PurchasingPage = () => {
                 if (insertItemsError) throw insertItemsError;
             }
             toast({ title: 'تم تحديث الفاتورة'});
-            // Stock is not updated on invoice edit as per previous discussions to avoid complexity.
             console.warn("Stock not updated on invoice edit. This requires advanced logic for calculating differences.");
         } else { // New Invoice
             // Insert new invoice
@@ -424,7 +423,7 @@ const PurchasingPage = () => {
                 }
             }
             toast({ title: 'تم إنشاء فاتورة شراء وتحديث المخزون'});
-            await fetchProductsForForm(); // Refetch products to update stock display
+            await fetchProductsForForm(); 
         }
         fetchInvoices();
         setIsInvoiceModalOpen(false);
@@ -700,7 +699,19 @@ const PurchasingPage = () => {
         <Dialog open={isInvoiceModalOpen} onOpenChange={(isOpen) => { setIsInvoiceModalOpen(isOpen); if (!isOpen) {setEditingInvoice(undefined); setCurrentInvoiceItems([]); setInvoiceTaxAmount(0); setInvoiceNotes(''); } }}>
           <DialogContent className="sm:max-w-3xl bg-card">
             <DialogHeader><DialogTitle className="font-headline text-2xl text-foreground">{editingInvoice ? `تعديل فاتورة الشراء: ${editingInvoice.invoice_number}` : 'إضافة فاتورة شراء جديدة'}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleSaveInvoice({invoice_number: fd.get('inv-number') as string || editingInvoice?.invoice_number, invoice_date: fd.get('inv-date') as string, due_date: fd.get('inv-duedate') as string | undefined, supplier_id: fd.get('inv-supplier') as string, status: fd.get('inv-status') as PurchaseInvoice['status'], tax_amount: parseFloat(fd.get('inv-tax') as string || '0'), notes: fd.get('inv-notes') as string || undefined });}} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
+            <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                const fd = new FormData(e.currentTarget); 
+                handleSaveInvoice({
+                    invoice_number: fd.get('inv-number') as string || editingInvoice?.invoice_number, 
+                    invoice_date: fd.get('inv-date') as string, 
+                    due_date: fd.get('inv-duedate') as string | undefined, 
+                    supplier_id: fd.get('inv-supplier') as string, 
+                    status: fd.get('inv-status') as PurchaseInvoice['status'], 
+                    tax_amount: parseFloat(fd.get('inv-tax') as string || '0'),
+                    // 'notes' field is not passed to handleSaveInvoice to avoid schema error
+                });
+            }} className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><Label htmlFor="inv-number">رقم الفاتورة (اتركه فارغًا للإنشاء التلقائي)</Label><Input id="inv-number" name="inv-number" defaultValue={editingInvoice?.invoice_number} className="mt-1 bg-input/50"/></div>
                     <div><Label htmlFor="inv-supplier">المورد</Label>
@@ -720,7 +731,7 @@ const PurchasingPage = () => {
                         </Select>
                     </div>
                 </div>
-                 <div><Label htmlFor="inv-notes">ملاحظات الفاتورة</Label><Textarea id="inv-notes" name="inv-notes" defaultValue={editingInvoice?.notes || invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} className="mt-1 bg-input/50"/></div>
+                 <div><Label htmlFor="inv-notes">ملاحظات الفاتورة (لن يتم حفظها حالياً بسبب عدم وجود عمود في قاعدة البيانات)</Label><Textarea id="inv-notes" name="inv-notes" defaultValue={editingInvoice?.notes || invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} className="mt-1 bg-input/50"/></div>
                 <Separator />
                  <Label className="text-lg font-medium">بنود الفاتورة</Label>
                 {currentInvoiceItems.map((item, index) => (
