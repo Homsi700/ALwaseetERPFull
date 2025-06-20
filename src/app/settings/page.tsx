@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Users, Cog, Store, Package, ShoppingCart, LayoutDashboard, UsersRound, KeyRound, LogOut, Printer, Palette, Percent, Globe, Building, Save } from 'lucide-react';
+import { Users, Cog, Store, KeyRound, LogOut, Printer, Palette, Percent, Globe, Building, Save, UsersRound, DatabaseBackup, ShieldAlert, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabaseClient';
@@ -109,11 +109,12 @@ const SettingsPage = () => {
         </div>
 
         <Tabs defaultValue="general" className="w-full" dir="rtl">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-2 md:grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 mb-6">
             <TabsTrigger value="general"><Store className="ml-1 h-4 w-4 sm:hidden md:inline-block" />الإعدادات العامة</TabsTrigger>
             <TabsTrigger value="account"><KeyRound className="ml-1 h-4 w-4 sm:hidden md:inline-block" />إعدادات الحساب</TabsTrigger>
             <TabsTrigger value="printing"><Printer className="ml-1 h-4 w-4 sm:hidden md:inline-block" />إعدادات الطباعة</TabsTrigger>
-            <TabsTrigger value="users"><UsersRound className="ml-1 h-4 w-4 sm:hidden md:inline-block" />المستخدمين والصلاحيات</TabsTrigger>
+            <TabsTrigger value="users"><UsersRound className="ml-1 h-4 w-4 sm:hidden md:inline-block" />المستخدمين</TabsTrigger>
+            <TabsTrigger value="backup"><DatabaseBackup className="ml-1 h-4 w-4 sm:hidden md:inline-block" />النسخ الاحتياطي</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general">
@@ -293,6 +294,67 @@ const SettingsPage = () => {
             </Card>
           </TabsContent>
 
+          <TabsContent value="backup">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="font-headline text-xl text-foreground flex items-center">
+                    <DatabaseBackup className="ml-2 h-6 w-6 text-primary" />
+                    النسخ الاحتياطي والاستعادة
+                </CardTitle>
+                <CardDescription>إدارة النسخ الاحتياطية لبيانات النظام.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="p-4 border border-yellow-500/50 bg-yellow-500/10 rounded-md">
+                    <div className="flex items-start">
+                        <ShieldAlert className="h-6 w-6 text-yellow-600 ml-3 mt-1 flex-shrink-0" />
+                        <div>
+                            <h4 className="font-semibold text-yellow-700">تنبيه هام بخصوص النسخ الاحتياطي الكامل</h4>
+                            <p className="text-sm text-yellow-600 mt-1">
+                                إن عملية النسخ الاحتياطي الكامل لقاعدة بيانات Supabase واستعادتها هي عملية متقدمة وحساسة.
+                                يوصى بشدة باستخدام أدوات Supabase الرسمية لهذه المهمة لضمان سلامة البيانات وتجنب أي فقدان.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 className="font-semibold text-lg mb-2">تصدير بيانات محددة</h4>
+                    <p className="text-sm text-muted-foreground mb-3">
+                        يمكنك تصدير مجموعات بيانات محددة (مثل المنتجات، العملاء، المبيعات) كملفات CSV أو PDF من قسم "التقارير" في النظام.
+                        هذا مفيد للتحليل أو للاحتفاظ بنسخ من أجزاء معينة من البيانات.
+                    </p>
+                    <Button variant="outline" onClick={() => router.push('/reports')}>
+                        <ExternalLink className="ml-2 h-4 w-4" /> الانتقال إلى قسم التقارير
+                    </Button>
+                </div>
+                
+                <div>
+                    <h4 className="font-semibold text-lg mb-2">النسخ الاحتياطي الكامل لقاعدة البيانات (موصى به)</h4>
+                    <p className="text-sm text-muted-foreground mb-1">
+                        للحصول على نسخة احتياطية كاملة لجميع بياناتك، يرجى اتباع الإرشادات الرسمية لـ Supabase:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground pr-4">
+                        <li>استخدام <code className="bg-muted px-1 py-0.5 rounded text-xs">supabase CLI</code> مع الأمر <code className="bg-muted px-1 py-0.5 rounded text-xs">pg_dump</code>.</li>
+                        <li>
+                            التحقق من خيارات النسخ الاحتياطي المتاحة في لوحة تحكم مشروعك على 
+                            <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline mx-1">
+                                 Supabase Dashboard
+                            </a>.
+                        </li>
+                    </ul>
+                     <p className="text-xs text-muted-foreground mt-2">
+                        القيام بعمليات نسخ احتياطي أو استعادة مباشرة من واجهة هذا التطبيق لقاعدة البيانات بأكملها يتطلب صلاحيات عالية جداً وغير متاح حالياً لأسباب أمنية.
+                    </p>
+                </div>
+              </CardContent>
+               <CardFooter>
+                 <p className="text-xs text-muted-foreground">
+                    تذكر: النسخ الاحتياطي الدوري للبيانات هو مسؤوليتك لضمان عدم فقدان أي معلومات هامة.
+                 </p>
+               </CardFooter>
+            </Card>
+          </TabsContent>
+
         </Tabs>
       </div>
     </AppLayout>
@@ -303,3 +365,4 @@ export default SettingsPage;
     
 
     
+
