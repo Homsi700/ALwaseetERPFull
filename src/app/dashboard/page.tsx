@@ -9,6 +9,7 @@ import { Download, TrendingUp, Users, DollarSign, ShoppingBag, AlertTriangle, Pi
 import { BarChart as RechartsBarChart, LineChart as RechartsLineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import React from 'react';
+import { useRouter } from 'next/navigation';
 
 const salesData = [
   { month: 'يناير', sales: 4000, profit: 2400 },
@@ -62,6 +63,8 @@ const chartConfig = {
 
 
 const DashboardPage = () => {
+  const router = useRouter();
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -74,7 +77,11 @@ const DashboardPage = () => {
 
         {/* Key Statistics Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-primary">
+          <Card 
+            className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-primary cursor-pointer hover:ring-2 hover:ring-primary/50"
+            onClick={() => router.push('/reports')}
+            title="عرض تقارير المبيعات والإيرادات"
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">إجمالي الإيرادات</CardTitle>
               <DollarSign className="h-3.5 w-3.5 text-primary" />
@@ -86,7 +93,11 @@ const DashboardPage = () => {
               </p>
             </CardContent>
           </Card>
-          <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-accent">
+          <Card 
+            className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-accent cursor-pointer hover:ring-2 hover:ring-accent/50"
+            onClick={() => router.push('/clients')}
+            title="الانتقال إلى إدارة العملاء"
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">العملاء النشطون</CardTitle>
               <Users className="h-3.5 w-3.5 text-accent" />
@@ -98,7 +109,11 @@ const DashboardPage = () => {
               </p>
             </CardContent>
           </Card>
-          <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-secondary">
+          <Card 
+            className="shadow-md hover:shadow-lg transition-shadow duration-300 border-l-4 border-secondary cursor-pointer hover:ring-2 hover:ring-secondary/50"
+            onClick={() => router.push('/reports')}
+            title="عرض تقارير المبيعات اليومية"
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-muted-foreground">مبيعات اليوم</CardTitle>
               <ShoppingBag className="h-3.5 w-3.5 text-secondary" />
@@ -110,7 +125,11 @@ const DashboardPage = () => {
               </p>
             </CardContent>
           </Card>
-          <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 bg-destructive/5 border-l-4 border-destructive">
+          <Card 
+            className="shadow-md hover:shadow-lg transition-shadow duration-300 bg-destructive/5 border-l-4 border-destructive cursor-pointer hover:ring-2 hover:ring-destructive/50"
+            onClick={() => router.push('/products')}
+            title="الانتقال إلى إدارة المنتجات لمتابعة المخزون"
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2 px-3">
               <CardTitle className="text-xs font-medium text-destructive/90">مخزون منخفض</CardTitle>
               <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
@@ -249,4 +268,3 @@ const DashboardPage = () => {
 export default DashboardPage;
 
     
-
