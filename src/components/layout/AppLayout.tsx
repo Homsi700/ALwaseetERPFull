@@ -40,10 +40,11 @@ const navItems: NavItem[] = [
   { href: '/partners', icon: Handshake, label: 'الشركاء' },
   { href: '/reports', icon: FileText, label: 'التقارير المالية' },
   { href: '/settings', icon: SettingsIcon, label: 'الإعدادات' },
+  // { href: '/users', icon: UsersRound, label: 'إدارة المستخدمين' }, // Removed from main nav
 ];
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
-  const { user, logout, loading } = useAuth();
+  const { user, logout, loading, companyName } = useAuth(); // Get companyName from context
   const router = useRouter();
   const pathname = usePathname();
 
@@ -53,7 +54,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     }
   }, [user, loading, router]);
 
-  if (loading || !user) { // Ensures that user data is available before rendering layout
+  if (loading || !user) { 
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -88,7 +89,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           <div className="flex items-center">
             <Link href="/dashboard" className="flex items-center gap-2 md:mr-0">
               <Building className="h-7 w-7 text-primary" />
-              <h1 className="text-xl font-headline font-semibold text-primary">الوسيط UI</h1>
+              <h1 className="text-xl font-headline font-semibold text-primary">{companyName || "الوسيط UI"}</h1>
             </Link>
           </div>
           <div className="flex items-center gap-4">
@@ -160,3 +161,4 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 };
 
 export default AppLayout;
+

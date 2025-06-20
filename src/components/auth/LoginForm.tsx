@@ -17,6 +17,7 @@ export const LoginForm = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { companyName } = useAuth(); // Get companyName from context
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -72,7 +73,7 @@ export const LoginForm = () => {
           <div className="flex justify-center items-center mb-4">
             <Building className="h-12 w-12 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-headline text-primary">الوسيط UI</CardTitle>
+          <CardTitle className="text-3xl font-headline text-primary">{companyName || "الوسيط UI"}</CardTitle>
           <CardDescription className="text-muted-foreground">قم بالوصول بأمان إلى لوحة تحكم المخزون والمبيعات الخاصة بك.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -122,3 +123,4 @@ export const LoginForm = () => {
     </div>
   );
 };
+

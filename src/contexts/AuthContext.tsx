@@ -2,24 +2,28 @@
 // src/contexts/AuthContext.tsx
 "use client";
 
-import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
+
+const DEFAULT_COMPANY_NAME = "الوسيط UI";
 
 interface UserProfile {
   id: string;
   email?: string;
   name?: string;
-  avatar?: string; 
+  avatar?: string;
 }
 
 interface AuthContextType {
   user: UserProfile | null;
   session: Session | null;
-  login: (email: string, name?: string, avatar?: string) => void; // Kept for potential direct use, but Supabase handles session
+  login: (email: string, name?: string, avatar?: string) => void;
   logout: () => Promise<void>;
   loading: boolean;
+  companyName: string;
+  setCompanyName: (name: string) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,9 +32,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyName, setGlobalCompanyName] = useState<string>(DEFAULT_COMPANY_NAME);
   const router = useRouter();
 
   useEffect(() => {
+    const storedCompanyName = localStorage.getItem('companyName');
+    if (storedCompanyName) {
+      setGlobalCompanyName(storedCompanyName);
+    }
+
     const getSession = async () => {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       setSession(currentSession);
@@ -59,14 +69,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             name: newSession.user.user_metadata?.full_name || newSession.user.email?.split('@')[0] || 'مستخدم',
             avatar: newSession.user.user_metadata?.avatar_url,
           });
-          // Only redirect on explicit SIGNED_IN event if not already on dashboard
-          // This prevents redirect loops if user is already on dashboard or other authenticated page
           if (_event === 'SIGNED_IN' && window.location.pathname === '/') {
             router.push('/dashboard');
           }
         } else {
           setUser(null);
-           if (_event === 'SIGNED_OUT' && window.location.pathname !== '/') { // Avoid pushing to '/' if already there
+           if (_event === 'SIGNED_OUT' && window.location.pathname !== '/') {
             router.push('/');
           }
         }
@@ -92,9 +100,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   };
 
+  const setCompanyName = useCallback((name: string) => {
+    setGlobalCompanyName(name);
+    localStorage.setItem('companyName', name);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, session, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, session, login, logout, loading, companyName, setCompanyName }}>
       {children}
     </AuthContext.Provider>
   );
 };
+
