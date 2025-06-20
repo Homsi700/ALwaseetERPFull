@@ -324,34 +324,34 @@
         ORDER BY
             total_profit_share_received DESC;
         ```
-    *   **`partner_daily_sales_profit_view` (جديد مقترح لتقارير الشركاء اليومية)**
-        *   **الغرض:** عرض تفاصيل مبيعات كل شريك يومياً مع حصته من الربح.
-        *   **الأعمدة:** `sale_id`, `sale_date`, `partner_id`, `partner_name`, `total_sale_amount`, `total_cost_of_goods_sold_for_sale`, `sale_profit`, `partner_share_from_sale`.
-        *   **SQL المقترح:**
-            ```sql
-            CREATE OR REPLACE VIEW public.partner_daily_sales_profit_view AS
-            WITH sale_cogs AS (
-                SELECT
-                    si.sale_id,
-                    SUM(si.quantity * pr.purchase_price) as total_cost
-                FROM public.sale_items si
-                JOIN public.products pr ON si.product_id = pr.id
-                GROUP BY si.sale_id
-            )
+5.  **`partner_daily_sales_profit_view` (جديد مقترح لتقارير الشركاء اليومية/الشهرية)**
+    *   **الغرض:** عرض تفاصيل مبيعات كل شريك يومياً/شهرياً مع حصته من الربح المحسوب لتلك الفاتورة.
+    *   **الأعمدة:** `sale_id`, `sale_date`, `partner_id`, `partner_name`, `total_sale_amount`, `total_cost_of_goods_sold_for_sale`, `sale_profit`, `partner_share_from_sale`.
+    *   **SQL المقترح (يجب اختباره وتعديله حسب الحاجة):**
+        ```sql
+        CREATE OR REPLACE VIEW public.partner_daily_sales_profit_view AS
+        WITH sale_cogs AS (
             SELECT
-                s.id as sale_id,
-                s.sale_date,
-                s.partner_id,
-                p.partner_name,
-                s.total_amount as total_sale_amount,
-                COALESCE(sc.total_cost, 0) as total_cost_of_goods_sold_for_sale,
-                (s.total_amount - COALESCE(sc.total_cost, 0)) as sale_profit,
-                s.partner_share_amount as partner_share_from_sale
-            FROM public.sales s
-            JOIN public.partners p ON s.partner_id = p.partner_id
-            LEFT JOIN sale_cogs sc ON s.id = sc.sale_id
-            WHERE s.partner_id IS NOT NULL AND s.partner_share_amount IS NOT NULL;
-            ```
+                si.sale_id,
+                SUM(si.quantity * pr.purchase_price) as total_cost
+            FROM public.sale_items si
+            JOIN public.products pr ON si.product_id = pr.id
+            GROUP BY si.sale_id
+        )
+        SELECT
+            s.id as sale_id,
+            s.sale_date,
+            s.partner_id,
+            p.partner_name,
+            s.total_amount as total_sale_amount,
+            COALESCE(sc.total_cost, 0) as total_cost_of_goods_sold_for_sale,
+            (s.total_amount - COALESCE(sc.total_cost, 0)) as sale_profit,
+            s.partner_share_amount as partner_share_from_sale -- This is the share already calculated and stored at POS
+        FROM public.sales s
+        JOIN public.partners p ON s.partner_id = p.partner_id
+        LEFT JOIN sale_cogs sc ON s.id = sc.sale_id
+        WHERE s.partner_id IS NOT NULL AND s.partner_share_amount IS NOT NULL;
+        ```
 
 ---
 
@@ -383,3 +383,5 @@
 
 آمل أن يكون هذا التقرير مفيداً وشاملاً!
 
+
+    

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter as TableFooterUi } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { PlusCircle, FileEdit, Trash2, MoreHorizontal, Handshake, Percent, PackageSearch, DollarSign, CalendarDays, TrendingUp, FileDown, Printer } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -28,7 +28,7 @@ interface Partner {
   partner_id: string;
   partner_name: string;
   profit_share_percentage: number;
-  initial_investment?: number; // New field
+  initial_investment?: number;
   created_at?: string;
 }
 
@@ -36,14 +36,14 @@ interface PartnerSaleDetail {
   sale_id: string;
   sale_date: string;
   total_sale_amount: number;
-  sale_profit: number;
-  partner_share_from_sale: number;
+  sale_profit: number; // Profit from the entire sale
+  partner_share_from_sale: number; // Partner's share from that sale_profit
 }
 
 const mapToSupabasePartner = (partnerData: Omit<Partner, 'partner_id' | 'created_at'> & { partner_id?: string }) => ({
   partner_name: partnerData.partner_name,
   profit_share_percentage: partnerData.profit_share_percentage,
-  initial_investment: partnerData.initial_investment || 0, // Ensure default
+  initial_investment: partnerData.initial_investment || 0,
 });
 
 const mapFromSupabasePartner = (data: any): Partner => ({
@@ -68,6 +68,8 @@ const PartnersPage = () => {
   const [reportDate, setReportDate] = useState<Date>(new Date());
   const [reportData, setReportData] = useState<PartnerSaleDetail[]>([]);
   const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [currentReportType, setCurrentReportType] = useState<'daily' | 'monthly' | null>(null);
+
 
   const fetchPartners = useCallback(async () => {
     if (!user) return;
@@ -160,37 +162,45 @@ const PartnersPage = () => {
     if (!user) return;
     setIsLoadingReport(true);
     setReportData([]);
+    setCurrentReportType(type); 
     try {
-      let fromDate, toDate;
+      let fromDateStr, toDateStr;
       if (type === 'daily') {
-        fromDate = format(date, "yyyy-MM-dd'T'00:00:00.000xxx");
-        toDate = format(date, "yyyy-MM-dd'T'23:59:59.999xxx");
+        fromDateStr = format(startOfDay(date), "yyyy-MM-dd'T'00:00:00.000xxx");
+        toDateStr = format(endOfDay(date), "yyyy-MM-dd'T'23:59:59.999xxx");
       } else { // monthly
-        fromDate = format(startOfMonth(date), "yyyy-MM-dd'T'00:00:00.000xxx");
-        toDate = format(endOfMonth(date), "yyyy-MM-dd'T'23:59:59.999xxx");
+        fromDateStr = format(startOfMonth(date), "yyyy-MM-dd'T'00:00:00.000xxx");
+        toDateStr = format(endOfMonth(date), "yyyy-MM-dd'T'23:59:59.999xxx");
       }
       
-      // Using the new view: partner_daily_sales_profit_view
       const { data, error } = await supabase
-        .from('partner_daily_sales_profit_view')
+        .from('partner_daily_sales_profit_view') // Make sure this view is created in Supabase
         .select('*')
         .eq('partner_id', partnerId)
-        .gte('sale_date', fromDate)
-        .lte('sale_date', toDate)
+        .gte('sale_date', fromDateStr)
+        .lte('sale_date', toDateStr)
         .order('sale_date', { ascending: false });
 
-      if (error) throw error;
-      
-      const formattedData: PartnerSaleDetail[] = data.map((item: any) => ({
-        sale_id: item.sale_id.substring(0,8),
-        sale_date: format(parseISO(item.sale_date), "yyyy/MM/dd HH:mm", { locale: arSA }),
-        total_sale_amount: item.total_sale_amount,
-        sale_profit: item.sale_profit,
-        partner_share_from_sale: item.partner_share_from_sale,
-      }));
-      setReportData(formattedData);
-      if(formattedData.length === 0) {
-        toast({ title: "لا توجد بيانات", description: "لم يتم العثور على مبيعات لهذا الشريك في الفترة المحددة."});
+      if (error) {
+        console.error("Error fetching partner report:", error);
+        if (error.message.includes("relation \"public.partner_daily_sales_profit_view\" does not exist")) {
+            toast({ title: `خطأ: View غير موجود`, description: `يرجى التأكد من إنشاء 'partner_daily_sales_profit_view' في قاعدة بيانات Supabase.`, variant: "destructive", duration: 10000 });
+        } else {
+            throw error;
+        }
+        setReportData([]);
+      } else {
+         const formattedData: PartnerSaleDetail[] = data.map((item: any) => ({
+            sale_id: item.sale_id.substring(0,8),
+            sale_date: format(parseISO(item.sale_date), "yyyy/MM/dd HH:mm", { locale: arSA }),
+            total_sale_amount: item.total_sale_amount,
+            sale_profit: item.sale_profit,
+            partner_share_from_sale: item.partner_share_from_sale,
+         }));
+         setReportData(formattedData);
+         if(formattedData.length === 0) {
+            toast({ title: "لا توجد بيانات", description: "لم يتم العثور على مبيعات لهذا الشريك في الفترة المحددة."});
+         }
       }
     } catch (err: any) {
       toast({ title: `خطأ في جلب تقرير الشريك ${type === 'daily' ? 'اليومي' : 'الشهري'}`, description: err.message, variant: "destructive" });
@@ -201,8 +211,8 @@ const PartnersPage = () => {
 
   const handleShowReport = (partner: Partner) => {
     setSelectedPartnerForReport(partner);
-    setReportDate(new Date()); // Default to today for daily, current month for monthly
-    fetchPartnerReport(partner.partner_id, new Date(), 'daily'); // Default to daily report
+    setReportDate(new Date()); 
+    fetchPartnerReport(partner.partner_id, new Date(), 'daily'); 
   };
 
   const totalPartnerShareForReport = useMemo(() => {
@@ -214,7 +224,7 @@ const PartnersPage = () => {
       toast({ title: "لا توجد بيانات للتصدير", variant: "destructive" });
       return;
     }
-    const filename = `report_partner_${selectedPartnerForReport.partner_name.replace(/\s/g, '_')}_${format(reportDate, "yyyyMMdd")}`;
+    const reportTitle = `تقرير_ارباح_الشريك_${selectedPartnerForReport.partner_name.replace(/\s/g, '_')}_${currentReportType === 'daily' ? format(reportDate, "yyyyMMdd") : format(reportDate, "yyyyMM")}`;
     
     const dataToExport = reportData.map(item => ({
       "معرف الفاتورة": item.sale_id,
@@ -229,14 +239,14 @@ const PartnersPage = () => {
       const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${filename}.csv`;
+      link.download = `${reportTitle}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       toast({ title: "تم تصدير CSV بنجاح" });
     } else if (formatType === 'pdf') {
-        // PDF Export - User will be reminded that browser controls the download path
-        const reportElement = document.getElementById(`partner-report-content-${selectedPartnerForReport.partner_id}`);
+        const reportElementId = `partner-report-content-${selectedPartnerForReport.partner_id}`;
+        const reportElement = document.getElementById(reportElementId);
         if (!reportElement) {
             toast({title: "خطأ: عنصر التقرير غير موجود", variant: "destructive"});
             return;
@@ -250,8 +260,8 @@ const PartnersPage = () => {
                 format: [canvas.width, canvas.height]
             });
             pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-            pdf.save(`${filename}.pdf`);
-            toast({ title: "تم تصدير PDF بنجاح (تجريبي)"});
+            pdf.save(`${reportTitle}.pdf`);
+            toast({ title: "تم تصدير PDF بنجاح" });
         }).catch(err => {
             toast({title: "خطأ أثناء تصدير PDF", description: err.message, variant: "destructive"});
         });
@@ -280,10 +290,10 @@ const PartnersPage = () => {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-center">
           <h1 className="text-3xl font-headline font-semibold text-foreground flex items-center">
-            <Handshake className="ml-3 h-8 w-8 text-primary" /> إدارة الشركاء
+            <Handshake className="mr-3 h-8 w-8 text-primary" /> إدارة الشركاء
           </h1>
           <Button onClick={handleAddPartner} className="mt-4 sm:mt-0 bg-primary hover:bg-primary/90 text-primary-foreground">
-            <PlusCircle className="ml-2 h-5 w-5" /> إضافة شريك جديد
+            <PlusCircle className="mr-2 h-5 w-5" /> إضافة شريك جديد
           </Button>
         </div>
 
@@ -294,7 +304,7 @@ const PartnersPage = () => {
         ) : partners.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {partners.map(partner => (
-              <Card key={partner.partner_id} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+              <Card key={partner.partner_id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col">
                 <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
                   <div className="space-y-1">
                     <CardTitle className="font-headline text-xl text-primary">{partner.partner_name}</CardTitle>
@@ -303,27 +313,27 @@ const PartnersPage = () => {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleShowReport(partner)}><TrendingUp className="ml-2 h-4 w-4" /> عرض تقرير الأرباح</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleEditPartner(partner)}><FileEdit className="ml-2 h-4 w-4" />تعديل</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDeletePartner(partner.partner_id)} className="text-destructive focus:text-destructive focus:bg-destructive/10"><Trash2 className="ml-2 h-4 w-4" />حذف</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleShowReport(partner)}><TrendingUp className="mr-2 h-4 w-4" /> عرض تقرير الأرباح</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEditPartner(partner)}><FileEdit className="mr-2 h-4 w-4" />تعديل</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDeletePartner(partner.partner_id)} className="text-destructive focus:text-destructive focus:bg-destructive/10"><Trash2 className="mr-2 h-4 w-4" />حذف</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground">
+                <CardContent className="flex-grow">
+                  <div className="text-sm text-muted-foreground space-y-1">
                     <p className="flex items-center">
-                      <DollarSign className="ml-1 h-4 w-4 text-green-500" />
+                      <DollarSign className="mr-1 h-4 w-4 text-green-500" />
                       الاستثمار الأولي: 
-                      <span className="font-semibold mr-1 text-foreground">{(partner.initial_investment || 0).toFixed(2)} ل.س</span>
+                      <span className="font-semibold ml-1 text-foreground">{(partner.initial_investment || 0).toFixed(2)} ل.س</span>
                     </p>
-                    <p className="text-xs mt-1">
+                    <p className="text-xs">
                       تاريخ الإنشاء: {partner.created_at ? new Date(partner.created_at).toLocaleDateString('ar-EG') : '-'}
                     </p>
                   </div>
                 </CardContent>
                  <CardFooter>
                     <Button variant="outline" size="sm" className="w-full" onClick={() => handleShowReport(partner)}>
-                        <TrendingUp className="ml-2 h-4 w-4" /> عرض تقارير الشريك
+                        <TrendingUp className="mr-2 h-4 w-4" /> عرض تقارير الشريك
                     </Button>
                  </CardFooter>
               </Card>
@@ -342,12 +352,12 @@ const PartnersPage = () => {
           <Card className="shadow-xl mt-8 border-t-4 border-primary" id={`partner-report-container-${selectedPartnerForReport.partner_id}`}>
             <CardHeader>
               <CardTitle className="font-headline text-2xl text-primary flex items-center">
-                <TrendingUp className="ml-2 h-6 w-6" />
+                <TrendingUp className="mr-2 h-6 w-6" />
                 تقرير أرباح الشريك: {selectedPartnerForReport.partner_name}
               </CardTitle>
               <CardDescription>
                 عرض تفصيلي لنصيب الشريك من أرباح المبيعات.
-                 ملاحظة: لحساب ربح الفاتورة، يتم طرح (مجموع أسعار شراء المنتجات في الفاتورة) من (إجمالي مبلغ الفاتورة بعد أي خصومات على مستوى الفاتورة).
+                 يتم حساب ربح الفاتورة عن طريق طرح مجموع أسعار شراء المنتجات في الفاتورة من إجمالي مبلغ الفاتورة.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -357,7 +367,7 @@ const PartnersPage = () => {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button id="reportDate" variant="outline" className="w-full sm:w-auto justify-start text-right font-normal mt-1">
-                        <CalendarDays className="ml-2 h-4 w-4" />
+                        <CalendarDays className="mr-2 h-4 w-4" />
                         {reportDate ? format(reportDate, "PPP", { locale: arSA }) : <span>اختر تاريخاً</span>}
                       </Button>
                     </PopoverTrigger>
@@ -368,22 +378,22 @@ const PartnersPage = () => {
                 </div>
                 <div className="flex gap-2">
                     <Button onClick={() => fetchPartnerReport(selectedPartnerForReport.partner_id, reportDate, 'daily')} disabled={isLoadingReport}>
-                        <CalendarDays className="ml-1 h-4 w-4" /> عرض تقرير يومي
+                        <CalendarDays className="mr-1 h-4 w-4" /> عرض تقرير يومي
                     </Button>
                     <Button onClick={() => fetchPartnerReport(selectedPartnerForReport.partner_id, reportDate, 'monthly')} disabled={isLoadingReport}>
-                        <CalendarDays className="ml-1 h-4 w-4" /> عرض تقرير شهري
+                        <CalendarDays className="mr-1 h-4 w-4" /> عرض تقرير شهري
                     </Button>
                 </div>
                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleExportReport('csv')} disabled={isLoadingReport || reportData.length === 0}><FileDown className="ml-1 h-3.5 w-3.5"/>CSV</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleExportReport('pdf')} disabled={isLoadingReport || reportData.length === 0}><Printer className="ml-1 h-3.5 w-3.5"/>PDF</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleExportReport('csv')} disabled={isLoadingReport || reportData.length === 0}><FileDown className="mr-1 h-3.5 w-3.5"/>CSV</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleExportReport('pdf')} disabled={isLoadingReport || reportData.length === 0}><Printer className="mr-1 h-3.5 w-3.5"/>PDF</Button>
                 </div>
               </div>
               
               {isLoadingReport ? (
                 <div className="flex justify-center items-center h-40"><PackageSearch className="h-12 w-12 text-muted-foreground/30 animate-pulse" /></div>
               ) : reportData.length > 0 ? (
-                <div id={`partner-report-content-${selectedPartnerForReport.partner_id}`}>
+                <div id={`partner-report-content-${selectedPartnerForReport.partner_id}`} className="border rounded-md overflow-hidden">
                   <Table>
                     <TableHeader><TableRow><TableHead>معرف الفاتورة</TableHead><TableHead>تاريخ البيع</TableHead><TableHead>مبلغ البيع</TableHead><TableHead>ربح الفاتورة</TableHead><TableHead>نصيب الشريك</TableHead></TableRow></TableHeader>
                     <TableBody>
@@ -397,20 +407,20 @@ const PartnersPage = () => {
                         </TableRow>
                       ))}
                     </TableBody>
-                     <TableFooter>
-                        <TableRow className="bg-muted/50">
-                            <TableCell colSpan={4} className="text-left font-bold text-base">إجمالي نصيب الشريك للفترة المحددة:</TableCell>
+                     <TableFooterUi className="bg-muted/50">
+                        <TableRow>
+                            <TableCell colSpan={4} className="text-right font-bold text-base">إجمالي نصيب الشريك للفترة ({currentReportType === 'daily' ? 'اليوم' : 'الشهر'}):</TableCell>
                             <TableCell className="font-bold text-base text-primary">{totalPartnerShareForReport.toFixed(2)} ل.س</TableCell>
                         </TableRow>
-                    </TableFooter>
+                    </TableFooterUi>
                   </Table>
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">لا توجد بيانات لعرضها للفترة المحددة.</p>
+                <p className="text-center text-muted-foreground py-8">لا توجد بيانات لعرضها للفترة المحددة. يرجى التأكد من إنشاء Views التقارير في Supabase.</p>
               )}
             </CardContent>
             <CardFooter>
-                <Button variant="ghost" onClick={() => {setSelectedPartnerForReport(null); setReportData([]);}}>إغلاق تقرير الشريك</Button>
+                <Button variant="ghost" onClick={() => {setSelectedPartnerForReport(null); setReportData([]); setCurrentReportType(null);}}>إغلاق تقرير الشريك</Button>
             </CardFooter>
           </Card>
         )}
@@ -442,7 +452,7 @@ const PartnersPage = () => {
               </div>
               <div>
                 <Label htmlFor="p-profit-share" className="flex items-center">
-                  <Percent className="ml-1 h-4 w-4 text-muted-foreground" />
+                  <Percent className="mr-1 h-4 w-4 text-muted-foreground" />
                   نسبة المشاركة في الربح (%)
                 </Label>
                 <Input
@@ -453,7 +463,7 @@ const PartnersPage = () => {
               </div>
               <div>
                 <Label htmlFor="p-investment" className="flex items-center">
-                    <DollarSign className="ml-1 h-4 w-4 text-muted-foreground" />
+                    <DollarSign className="mr-1 h-4 w-4 text-muted-foreground" />
                     الاستثمار الأولي (ل.س)
                 </Label>
                 <Input 
@@ -475,4 +485,6 @@ const PartnersPage = () => {
 };
 
 export default PartnersPage;
+    
+
     
