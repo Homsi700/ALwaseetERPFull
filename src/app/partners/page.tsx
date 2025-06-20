@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter as TableFooterUi } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
-import { PlusCircle, FileEdit, Trash2, MoreHorizontal, Handshake, Percent, PackageSearch, DollarSign, CalendarDays, TrendingUp, FileDown, Printer } from 'lucide-react';
+import { PlusCircle, FileEdit, Trash2, MoreHorizontal, Handshake, Percent, PackageSearch, DollarSign, CalendarDays, TrendingUp, FileDown, Printer, MessageSquare } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
@@ -18,17 +18,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from "@/components/ui/calendar";
-import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
+import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay } from "date-fns";
 import { arSA } from "date-fns/locale";
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Partner {
   partner_id: string;
   partner_name: string;
   profit_share_percentage: number;
   initial_investment?: number;
+  notes?: string; 
   created_at?: string;
 }
 
@@ -44,6 +46,7 @@ const mapToSupabasePartner = (partnerData: Omit<Partner, 'partner_id' | 'created
   partner_name: partnerData.partner_name,
   profit_share_percentage: partnerData.profit_share_percentage,
   initial_investment: partnerData.initial_investment || 0,
+  notes: partnerData.notes,
 });
 
 const mapFromSupabasePartner = (data: any): Partner => ({
@@ -51,6 +54,7 @@ const mapFromSupabasePartner = (data: any): Partner => ({
   partner_name: data.partner_name,
   profit_share_percentage: data.profit_share_percentage,
   initial_investment: data.initial_investment,
+  notes: data.notes,
   created_at: data.created_at,
 });
 
@@ -319,13 +323,21 @@ const PartnersPage = () => {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </CardHeader>
-                <CardContent className="flex-grow">
+                <CardContent className="flex-grow space-y-2">
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p className="flex items-center">
                       <DollarSign className="mr-1 h-4 w-4 text-green-500" />
                       الاستثمار الأولي: 
                       <span className="font-semibold ml-1 text-foreground">{(partner.initial_investment || 0).toFixed(2)} ل.س</span>
                     </p>
+                    {partner.notes && (
+                        <div className="flex items-start">
+                            <MessageSquare className="mr-1 h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0"/>
+                            <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                <span className="font-medium text-foreground">ملاحظات:</span> {partner.notes}
+                            </p>
+                        </div>
+                    )}
                     <p className="text-xs">
                       تاريخ الإنشاء: {partner.created_at ? new Date(partner.created_at).toLocaleDateString('ar-EG') : '-'}
                     </p>
@@ -430,7 +442,7 @@ const PartnersPage = () => {
             <DialogHeader>
               <DialogTitle className="font-headline text-2xl text-foreground">{editingPartner ? 'تعديل بيانات الشريك' : 'إضافة شريك جديد'}</DialogTitle>
               <DialogDescription>
-                {editingPartner ? `تعديل بيانات الشريك: ${editingPartner.partner_name}` : 'أدخل تفاصيل الشريك الجديد ونسبة مشاركته ومبلغه المستثمر.'}
+                {editingPartner ? `تعديل بيانات الشريك: ${editingPartner.partner_name}` : 'أدخل تفاصيل الشريك الجديد ونسبة مشاركته ومبلغه المستثمر وملاحظاتك.'}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={(e) => {
@@ -440,6 +452,7 @@ const PartnersPage = () => {
                 partner_name: formData.get('p-name') as string,
                 profit_share_percentage: parseFloat(formData.get('p-profit-share') as string),
                 initial_investment: parseFloat(formData.get('p-investment') as string) || 0,
+                notes: formData.get('p-notes') as string || undefined,
               };
               if (editingPartner) {
                 partnerPayload.partner_id = editingPartner.partner_id;
@@ -472,6 +485,18 @@ const PartnersPage = () => {
                     className="mt-1 bg-input/50 focus:bg-input" placeholder="0.00"
                 />
               </div>
+              <div>
+                <Label htmlFor="p-notes" className="flex items-center">
+                  <MessageSquare className="mr-1 h-4 w-4 text-muted-foreground" />
+                  ملاحظات (اختياري)
+                </Label>
+                <Textarea
+                  id="p-notes" name="p-notes"
+                  defaultValue={editingPartner?.notes}
+                  className="mt-1 bg-input/50 focus:bg-input min-h-[80px]"
+                  placeholder="مثال: تم دفع الاستثمار بالدولار بتاريخ..."
+                />
+              </div>
               <DialogFooter>
                 <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">حفظ بيانات الشريك</Button>
                 <DialogClose asChild><Button type="button" variant="outline">إلغاء</Button></DialogClose>
@@ -485,6 +510,8 @@ const PartnersPage = () => {
 };
 
 export default PartnersPage;
+    
+
     
 
     
