@@ -129,6 +129,7 @@ const PosPage = () => {
   useEffect(() => {
     fetchProducts();
     fetchPartners();
+    barcodeInputRef.current?.focus(); // Initial focus
   }, [fetchProducts, fetchPartners]);
 
   const isProductWeighable = (product: Product): boolean => {
@@ -195,7 +196,7 @@ const PosPage = () => {
       .from('products')
       .update({ stock: newStockInDB < 0 ? 0 : newStockInDB }) 
       .eq('id', product.id)
-      .gte('stock', effectiveQuantity); // Ensure stock is sufficient before update
+      .gte('stock', effectiveQuantity); 
 
     if (stockUpdateError) {
       toast({ title: "خطأ في تحديث المخزون", description: `فشل تحديث مخزون ${product.name}. قد يكون المخزون غير كافٍ أو خطأ في الاتصال. ${stockUpdateError.message}`, variant: "destructive" });
@@ -234,7 +235,7 @@ const PosPage = () => {
     setIsProcessingCartAction(false);
   }, [cart, toast, availableProducts, isProcessingCartAction, fetchProducts]);
 
-  const handleProductSelection = useCallback((product: Product) => {
+  const handleProductSelection = useCallback(async (product: Product) => {
     const productInState = availableProducts.find(p => p.id === product.id);
     if (!productInState || productInState.stock <= 0) { 
         toast({ title: "نفذ المخزون", description: `عفواً، ${product.name} غير متوفر حالياً.`, variant: "destructive" });
@@ -248,7 +249,11 @@ const PosPage = () => {
       setIsWeightModalOpen(true);
       setTimeout(() => weightInputModalRef.current?.focus(), 0);
     } else {
-      addProductToCart(productInState, 1, false);
+      await addProductToCart(productInState, 1, false);
+      // Focus barcode input after adding non-weighable product via button
+      setTimeout(() => {
+         barcodeInputRef.current?.focus();
+      }, 0);
     }
   }, [cart, toast, addProductToCart, availableProducts]);
 
@@ -271,7 +276,7 @@ const PosPage = () => {
         return;
     }
     
-    if (existingCartItem) { // If item is already in cart, restore its stock before re-adding
+    if (existingCartItem) { 
         const stockToRestore = existingCartItem.itemQuantityInCart;
         const { error: stockRevertError } = await supabase
             .from('products')
@@ -283,13 +288,13 @@ const PosPage = () => {
             setIsProcessingCartAction(false);
             return;
         }
-        updateProductState(productToWeigh.id, productInDb.stock + stockToRestore); // Update local state
-        setCart(prev => prev.filter(item => !(item.id === productToWeigh.id && item.isWeighed))); // Remove old item from cart
+        updateProductState(productToWeigh.id, productInDb.stock + stockToRestore); 
+        setCart(prev => prev.filter(item => !(item.id === productToWeigh.id && item.isWeighed))); 
     }
     
     const freshProductData = availableProducts.find(p => p.id === productToWeigh.id); 
     if (freshProductData) {
-        await addProductToCart(freshProductData, weight, true); // Add with new weight (stock check happens inside)
+        await addProductToCart(freshProductData, weight, true); 
     } else {
         toast({ title: "خطأ", description: "لم يتم العثور على المنتج لتحديث وزنه.", variant: "destructive"});
     }
@@ -298,7 +303,10 @@ const PosPage = () => {
     setProductToWeigh(null);
     setWeightInputValue('');
     setIsProcessingCartAction(false);
-    barcodeInputRef.current?.focus();
+    setTimeout(() => {
+        barcodeInputRef.current?.focus();
+        barcodeInputRef.current?.select();
+    }, 0);
   }, [productToWeigh, weightInputValue, toast, addProductToCart, cart, availableProducts, isProcessingCartAction]);
 
   const handleDirectAddWeighedProduct = useCallback(async () => {
@@ -315,6 +323,7 @@ const PosPage = () => {
     setSelectedDirectWeighProduct(null);
     setDirectWeightInput('');
     barcodeInputRef.current?.focus();
+    barcodeInputRef.current?.select();
   }, [selectedDirectWeighProduct, directWeightInput, toast, addProductToCart, isProcessingCartAction]);
   
   const updateCartItemQuantity = useCallback(async (productId: string, newQuantityValue: number | string) => {
@@ -333,10 +342,10 @@ const PosPage = () => {
     const item = updatedCart[itemIndex];
     const oldCartQuantity = item.itemQuantityInCart;
     
-    if (newQuantity <= 0) { // Remove item from cart
+    if (newQuantity <= 0) { 
         const { error: stockUpdateError } = await supabase
             .from('products')
-            .update({ stock: supabase.sql`stock + ${oldCartQuantity}`}) // Restore stock
+            .update({ stock: supabase.sql`stock + ${oldCartQuantity}`}) 
             .eq('id', productId);
         if (stockUpdateError) {
             toast({ title: "خطأ في تحديث المخزون", description: stockUpdateError.message, variant: "destructive" });
@@ -349,8 +358,8 @@ const PosPage = () => {
         updatedCart.splice(itemIndex, 1);
         setCart(updatedCart);
         toast({ title: "تمت إزالة المنتج"});
-    } else { // Update quantity
-        const quantityChange = newQuantity - oldCartQuantity; // Positive if increasing, negative if decreasing
+    } else { 
+        const quantityChange = newQuantity - oldCartQuantity; 
         const productInState = availableProducts.find(p => p.id === productId);
 
         if (!productInState) {
@@ -360,10 +369,10 @@ const PosPage = () => {
         }
         const currentDBStock = productInState.stock; 
 
-        if (quantityChange > 0 && currentDBStock < quantityChange) { // Trying to add more than available
+        if (quantityChange > 0 && currentDBStock < quantityChange) { 
             toast({ title: "تنبيه المخزون", description: `لا يوجد ما يكفي من ${item.name}. المتاح للإضافة: ${currentDBStock}`, variant: "destructive" });
-            newQuantity = oldCartQuantity + currentDBStock; // Add only what's available
-            const stockChangeInDBForSupabase = -currentDBStock; // Decrease DB stock by available amount
+            newQuantity = oldCartQuantity + currentDBStock; 
+            const stockChangeInDBForSupabase = -currentDBStock; 
 
             const { error: stockUpdateError } = await supabase
                 .from('products')
@@ -372,8 +381,8 @@ const PosPage = () => {
             if (stockUpdateError) { toast({ title: "خطأ تحديث المخزون", description: stockUpdateError.message, variant: "destructive" }); }
             else updateProductState(productId, productInState.stock + stockChangeInDBForSupabase);
 
-        } else { // Sufficient stock or decreasing quantity
-            const stockChangeInDBForSupabase = -quantityChange; // If quantityChange is negative (decreasing), this becomes positive (restoring stock)
+        } else { 
+            const stockChangeInDBForSupabase = -quantityChange; 
              const { error: stockUpdateError } = await supabase
                 .from('products')
                 .update({ stock: supabase.sql`stock + ${stockChangeInDBForSupabase}`})
@@ -388,7 +397,7 @@ const PosPage = () => {
         
         item.itemQuantityInCart = newQuantity;
         item.totalItemPrice = item.pricePerUnit * item.itemQuantityInCart;
-        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; // Update item in cart with new stock
+        updatedCart[itemIndex] = {...item, stock: availableProducts.find(p => p.id === productId)?.stock || 0 }; 
         setCart(updatedCart);
         toast({ title: "تم تحديث الكمية", description: `تم تحديث كمية ${item.name} في السلة.`});
     }
@@ -411,7 +420,7 @@ const PosPage = () => {
         return;
     }
 
-    // Restore stock in DB
+    
     const { error: stockUpdateError } = await supabase
       .from('products')
       .update({ stock: supabase.sql`stock + ${itemInCart.itemQuantityInCart}` })
@@ -423,7 +432,7 @@ const PosPage = () => {
       return;
     }
     
-    updateProductState(productId, productInState.stock + itemInCart.itemQuantityInCart); // Update local state
+    updateProductState(productId, productInState.stock + itemInCart.itemQuantityInCart); 
     setCart(prevCart => prevCart.filter(item => !(item.id === productId && item.isWeighed === isWeighedItem) ));
     toast({ title: "تمت إزالة المنتج", description: "تمت إزالة المنتج من السلة واسترجاع المخزون." });
     setIsProcessingCartAction(false);
@@ -502,21 +511,20 @@ const PosPage = () => {
 
     setIsProcessingCartAction(true); 
 
-    // Calculate partner share amount
+    
     let totalCostOfGoodsSold = 0;
     for (const item of cart) {
-      // Ensure purchasePrice is part of CartItem and available.
-      // It should be if CartItem extends Product and Product has purchasePrice.
+      
       totalCostOfGoodsSold += item.itemQuantityInCart * item.purchasePrice;
     }
-    const saleProfit = cartTotal - totalCostOfGoodsSold; // cartTotal already considers discounts
+    const saleProfit = cartTotal - totalCostOfGoodsSold; 
     let partnerShareAmountValue: number | null = null;
 
     if (selectedPartner && saleProfit > 0) {
       const partnerDetails = availablePartners.find(p => p.partner_id === selectedPartner);
       if (partnerDetails) {
         partnerShareAmountValue = saleProfit * (partnerDetails.profit_share_percentage / 100.0);
-        partnerShareAmountValue = parseFloat(partnerShareAmountValue.toFixed(2)); // Ensure two decimal places
+        partnerShareAmountValue = parseFloat(partnerShareAmountValue.toFixed(2)); 
       }
     }
 
@@ -526,7 +534,7 @@ const PosPage = () => {
         .from('sales')
         .insert({
           total_amount: cartTotal, 
-          discount_amount: discountAmount > 0 ? discountAmount : null, // Save discount if applied
+          discount_amount: discountAmount > 0 ? discountAmount : null, 
           payment_method: 'Cash', 
           sale_date: new Date().toISOString(),
           user_id: user.id,
@@ -552,7 +560,7 @@ const PosPage = () => {
       const { error: saleItemsError } = await supabase.from('sale_items').insert(saleItemsToInsert);
       if (saleItemsError) throw saleItemsError;
       
-      // Stock is already updated with each cart modification, no need to update here again.
+      
       
       toast({ icon: <CheckCircle className="text-green-500" />, title: "تم الدفع بنجاح", description: `الإجمالي: ${cartTotal.toFixed(2)} ل.س. تم تسجيل البيع.` });
       setCart([]); 
@@ -562,9 +570,12 @@ const PosPage = () => {
       setDiscountInput('');
       setSelectedPartner(undefined);
       barcodeInputRef.current?.focus();
+      await fetchProducts(); // Refresh product list to show updated stock
     } catch (error: any) {
       console.error("خطأ أثناء الدفع:", error);
       toast({ icon: <XCircle className="text-red-500" />, title: "خطأ أثناء الدفع", description: error.message || "فشلت عملية الدفع.", variant: "destructive"});
+      // Attempt to refetch products even on error to reflect any partial stock changes that might have occurred
+      await fetchProducts();
     } finally {
         setIsProcessingCartAction(false);
     }
@@ -735,9 +746,9 @@ const PosPage = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="py-2 px-3 w-[40%]">المنتج</TableHead>
-                    <TableHead className="text-center py-2 px-2 w-[30%]">الكمية/الوزن</TableHead>
+                    <TableHead className="text-center py-2 px-2 w-[25%]">الكمية/الوزن</TableHead>
                     <TableHead className="text-left py-2 px-2 w-[20%]">السعر الإجمالي</TableHead>
-                    <TableHead className="py-2 px-1 w-[10%] text-left"></TableHead>
+                    <TableHead className="py-2 px-1 w-[15%] text-left">إجراء</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -846,7 +857,7 @@ const PosPage = () => {
             </Button>
             
             <Button 
-                className="w-full text-base py-2 h-11 bg-purple-600 hover:bg-purple-700 text-primary-foreground" 
+                className="w-full text-base py-2 h-10 bg-purple-600 hover:bg-purple-700 text-primary-foreground" 
                 onClick={handleCheckout} 
                 disabled={cart.length === 0 || isProcessingCartAction || isLoadingProducts || isLoadingPartners}
             >
@@ -946,3 +957,5 @@ const PosPage = () => {
 };
 
 export default PosPage;
+
+    
