@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter as TableFooterUi } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
-import { PlusCircle, FileEdit, Trash2, MoreHorizontal, Handshake, Percent, PackageSearch, DollarSign, CalendarDays, TrendingUp, FileDown, Printer, MessageSquare } from 'lucide-react';
+import { PlusCircle, FileEdit, Trash2, MoreHorizontal, Handshake, Percent, PackageSearch, DollarSign, CalendarDays, TrendingUp, FileDown, Printer, MessageSquare, Phone, MapPin, CalendarPlus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
@@ -18,12 +18,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from "@/components/ui/calendar";
-import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay, isValid, parse } from "date-fns";
 import { arSA } from "date-fns/locale";
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from "@/lib/utils";
+
 
 interface Partner {
   partner_id: string;
@@ -32,14 +34,17 @@ interface Partner {
   initial_investment?: number;
   notes?: string; 
   created_at?: string;
+  phone?: string;
+  address?: string;
+  investment_date?: string; // Date as YYYY-MM-DD string
 }
 
 interface PartnerSaleDetail {
   sale_id: string;
   sale_date: string;
   total_sale_amount: number;
-  sale_profit: number; // Profit from the entire sale
-  partner_share_from_sale: number; // Partner's share from that sale_profit
+  sale_profit: number; 
+  partner_share_from_sale: number; 
 }
 
 const mapToSupabasePartner = (partnerData: Omit<Partner, 'partner_id' | 'created_at'> & { partner_id?: string }) => ({
@@ -47,6 +52,9 @@ const mapToSupabasePartner = (partnerData: Omit<Partner, 'partner_id' | 'created
   profit_share_percentage: partnerData.profit_share_percentage,
   initial_investment: partnerData.initial_investment || 0,
   notes: partnerData.notes,
+  phone: partnerData.phone,
+  address: partnerData.address,
+  investment_date: partnerData.investment_date ? format(new Date(partnerData.investment_date), 'yyyy-MM-dd') : null,
 });
 
 const mapFromSupabasePartner = (data: any): Partner => ({
@@ -56,6 +64,9 @@ const mapFromSupabasePartner = (data: any): Partner => ({
   initial_investment: data.initial_investment,
   notes: data.notes,
   created_at: data.created_at,
+  phone: data.phone,
+  address: data.address,
+  investment_date: data.investment_date ? format(new Date(data.investment_date), 'yyyy-MM-dd') : undefined,
 });
 
 
@@ -63,6 +74,7 @@ const PartnersPage = () => {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<Partner | undefined>(undefined);
+  const [partnerInvestmentDate, setPartnerInvestmentDate] = useState<Date | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -102,11 +114,14 @@ const PartnersPage = () => {
 
   const handleAddPartner = () => {
     setEditingPartner(undefined);
+    setPartnerInvestmentDate(undefined); // Reset date for new partner
     setIsModalOpen(true);
   };
 
   const handleEditPartner = (partner: Partner) => {
     setEditingPartner(partner);
+    // Ensure investment_date is a valid Date object or undefined
+    setPartnerInvestmentDate(partner.investment_date ? new Date(partner.investment_date) : undefined);
     setIsModalOpen(true);
   };
 
@@ -157,6 +172,7 @@ const PartnersPage = () => {
       fetchPartners();
       setIsModalOpen(false);
       setEditingPartner(undefined);
+      setPartnerInvestmentDate(undefined);
     } catch (error: any) {
       toast({ title: 'خطأ في حفظ بيانات الشريك', description: error.message, variant: 'destructive' });
     }
@@ -178,7 +194,7 @@ const PartnersPage = () => {
       }
       
       const { data, error } = await supabase
-        .from('partner_daily_sales_profit_view') // Make sure this view is created in Supabase
+        .from('partner_daily_sales_profit_view') 
         .select('*')
         .eq('partner_id', partnerId)
         .gte('sale_date', fromDateStr)
@@ -323,22 +339,42 @@ const PartnersPage = () => {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </CardHeader>
-                <CardContent className="flex-grow space-y-2">
-                  <div className="text-sm text-muted-foreground space-y-1">
+                <CardContent className="flex-grow space-y-3">
+                  <div className="text-sm text-muted-foreground space-y-1.5">
                     <p className="flex items-center">
                       <DollarSign className="mr-1 h-4 w-4 text-green-500" />
-                      الاستثمار الأولي: 
+                      الاستثمار: 
                       <span className="font-semibold ml-1 text-foreground">{(partner.initial_investment || 0).toFixed(2)} ل.س</span>
                     </p>
+                    {partner.investment_date && (
+                        <p className="flex items-center">
+                            <CalendarPlus className="mr-1 h-4 w-4 text-blue-500"/>
+                            تاريخ الاستثمار:
+                            <span className="font-semibold ml-1 text-foreground">{format(new Date(partner.investment_date), "d MMMM yyyy", { locale: arSA })}</span>
+                        </p>
+                    )}
+                    {partner.phone && (
+                        <p className="flex items-center">
+                            <Phone className="mr-1 h-4 w-4 text-indigo-500"/>
+                            الهاتف:
+                            <span className="font-semibold ml-1 text-foreground">{partner.phone}</span>
+                        </p>
+                    )}
+                     {partner.address && (
+                        <p className="flex items-start">
+                            <MapPin className="mr-1 h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0"/>
+                            <span className="font-semibold ml-1 text-foreground whitespace-pre-wrap">{partner.address}</span>
+                        </p>
+                    )}
                     {partner.notes && (
                         <div className="flex items-start">
-                            <MessageSquare className="mr-1 h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0"/>
+                            <MessageSquare className="mr-1 h-4 w-4 text-teal-500 mt-0.5 flex-shrink-0"/>
                             <p className="text-xs text-muted-foreground whitespace-pre-wrap">
                                 <span className="font-medium text-foreground">ملاحظات:</span> {partner.notes}
                             </p>
                         </div>
                     )}
-                    <p className="text-xs">
+                     <p className="text-xs pt-1">
                       تاريخ الإنشاء: {partner.created_at ? new Date(partner.created_at).toLocaleDateString('ar-EG') : '-'}
                     </p>
                   </div>
@@ -437,12 +473,12 @@ const PartnersPage = () => {
           </Card>
         )}
 
-        <Dialog open={isModalOpen} onOpenChange={(isOpen) => { setIsModalOpen(isOpen); if (!isOpen) setEditingPartner(undefined); }}>
+        <Dialog open={isModalOpen} onOpenChange={(isOpen) => { setIsModalOpen(isOpen); if (!isOpen) { setEditingPartner(undefined); setPartnerInvestmentDate(undefined); } }}>
           <DialogContent className="sm:max-w-lg bg-card">
             <DialogHeader>
               <DialogTitle className="font-headline text-2xl text-foreground">{editingPartner ? 'تعديل بيانات الشريك' : 'إضافة شريك جديد'}</DialogTitle>
               <DialogDescription>
-                {editingPartner ? `تعديل بيانات الشريك: ${editingPartner.partner_name}` : 'أدخل تفاصيل الشريك الجديد ونسبة مشاركته ومبلغه المستثمر وملاحظاتك.'}
+                {editingPartner ? `تعديل بيانات الشريك: ${editingPartner.partner_name}` : 'أدخل تفاصيل الشريك الجديد وبياناته الأساسية.'}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={(e) => {
@@ -452,6 +488,9 @@ const PartnersPage = () => {
                 partner_name: formData.get('p-name') as string,
                 profit_share_percentage: parseFloat(formData.get('p-profit-share') as string),
                 initial_investment: parseFloat(formData.get('p-investment') as string) || 0,
+                phone: formData.get('p-phone') as string || undefined,
+                address: formData.get('p-address') as string || undefined,
+                investment_date: partnerInvestmentDate ? format(partnerInvestmentDate, 'yyyy-MM-dd') : undefined,
                 notes: formData.get('p-notes') as string || undefined,
               };
               if (editingPartner) {
@@ -463,27 +502,77 @@ const PartnersPage = () => {
                 <Label htmlFor="p-name">اسم الشريك</Label>
                 <Input id="p-name" name="p-name" defaultValue={editingPartner?.partner_name} required className="mt-1 bg-input/50 focus:bg-input" />
               </div>
-              <div>
-                <Label htmlFor="p-profit-share" className="flex items-center">
-                  <Percent className="mr-1 h-4 w-4 text-muted-foreground" />
-                  نسبة المشاركة في الربح (%)
-                </Label>
-                <Input
-                  id="p-profit-share" name="p-profit-share" type="number" step="0.01" min="0" max="100"
-                  defaultValue={editingPartner?.profit_share_percentage?.toString() || "0"}
-                  required className="mt-1 bg-input/50 focus:bg-input" placeholder="مثال: 10.5"
-                />
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <Label htmlFor="p-profit-share" className="flex items-center">
+                    <Percent className="mr-1 h-4 w-4 text-muted-foreground" />
+                    نسبة المشاركة في الربح (%)
+                    </Label>
+                    <Input
+                    id="p-profit-share" name="p-profit-share" type="number" step="0.01" min="0" max="100"
+                    defaultValue={editingPartner?.profit_share_percentage?.toString() || "0"}
+                    required className="mt-1 bg-input/50 focus:bg-input" placeholder="مثال: 10.5"
+                    />
+                </div>
+                <div>
+                    <Label htmlFor="p-investment" className="flex items-center">
+                        <DollarSign className="mr-1 h-4 w-4 text-muted-foreground" />
+                        الاستثمار الأولي (ل.س)
+                    </Label>
+                    <Input 
+                        id="p-investment" name="p-investment" type="number" step="0.01" min="0"
+                        defaultValue={editingPartner?.initial_investment?.toString() || "0"}
+                        className="mt-1 bg-input/50 focus:bg-input" placeholder="0.00"
+                    />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="p-phone" className="flex items-center">
+                    <Phone className="mr-1 h-4 w-4 text-muted-foreground" />
+                    رقم الهاتف (اختياري)
+                  </Label>
+                  <Input id="p-phone" name="p-phone" type="tel" defaultValue={editingPartner?.phone} className="mt-1 bg-input/50 focus:bg-input" />
+                </div>
+                <div>
+                    <Label htmlFor="p-investment-date" className="flex items-center">
+                        <CalendarPlus className="mr-1 h-4 w-4 text-muted-foreground"/>
+                        تاريخ الاستثمار (اختياري)
+                    </Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                        <Button
+                            variant={"outline"}
+                            className={cn(
+                            "w-full justify-start text-right font-normal mt-1 bg-input/50 focus:bg-input",
+                            !partnerInvestmentDate && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarDays className="ml-2 h-4 w-4" />
+                            {partnerInvestmentDate ? format(partnerInvestmentDate, "PPP", { locale: arSA }) : <span>اختر تاريخًا</span>}
+                        </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                        <Calendar
+                            mode="single"
+                            selected={partnerInvestmentDate}
+                            onSelect={setPartnerInvestmentDate}
+                            initialFocus
+                            locale={arSA}
+                            captionLayout="dropdown-buttons" 
+                            fromYear={2000} 
+                            toYear={new Date().getFullYear() + 5}
+                        />
+                        </PopoverContent>
+                    </Popover>
+                 </div>
               </div>
               <div>
-                <Label htmlFor="p-investment" className="flex items-center">
-                    <DollarSign className="mr-1 h-4 w-4 text-muted-foreground" />
-                    الاستثمار الأولي (ل.س)
+                <Label htmlFor="p-address" className="flex items-center">
+                  <MapPin className="mr-1 h-4 w-4 text-muted-foreground" />
+                  العنوان (اختياري)
                 </Label>
-                <Input 
-                    id="p-investment" name="p-investment" type="number" step="0.01" min="0"
-                    defaultValue={editingPartner?.initial_investment?.toString() || "0"}
-                    className="mt-1 bg-input/50 focus:bg-input" placeholder="0.00"
-                />
+                <Textarea id="p-address" name="p-address" defaultValue={editingPartner?.address} className="mt-1 bg-input/50 focus:bg-input min-h-[60px]" placeholder="مثال: دمشق، المزة..."/>
               </div>
               <div>
                 <Label htmlFor="p-notes" className="flex items-center">
@@ -510,8 +599,6 @@ const PartnersPage = () => {
 };
 
 export default PartnersPage;
-    
-
     
 
     

@@ -96,6 +96,9 @@
 | `partner_name`            | `text`              |    |    |                       | اسم الشريك (Not Null)                                                 |
 | `profit_share_percentage` | `numeric`           |    |    |                       | نسبة المشاركة في الربح (Not Null, CHECK 0-100)                       |
 | `initial_investment`      | `numeric`           |    |    |                       | المبلغ الأولي الذي استثمره الشريك (Nullable, Default 0)            |
+| `phone`                   | `text`              |    |    |                       | رقم هاتف الشريك (Nullable)                                           |
+| `address`                 | `text`              |    |    |                       | عنوان الشريك (Nullable)                                               |
+| `investment_date`         | `date`              |    |    |                       | تاريخ الاستثمار الأولي للشريك (Nullable)                             |
 | `notes`                   | `text`              |    |    |                       | ملاحظات إضافية حول الشريك (Nullable)                               |
 | `created_at`              | `timestamp with time zone` |    |    |                       | تاريخ إنشاء السجل (Default `now()`, Not Null)                        |
 
